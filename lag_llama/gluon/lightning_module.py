@@ -30,9 +30,12 @@ from data.augmentations.gluonts_augmentations import (
     WindowWarp,
 )
 
-from gluon_utils.gluon_ts_distributions.implicit_quantile_network import ImplicitQuantileNetworkOutput
+from gluon_utils.gluon_ts_distributions.implicit_quantile_network import (
+    ImplicitQuantileNetworkOutput,
+)
 
 from lag_llama.model.module import LagLlamaModel
+
 
 class LagLlamaLightningModule(pl.LightningModule):
     """
@@ -312,26 +315,36 @@ class LagLlamaLightningModule(pl.LightningModule):
             past_time_feat=past_time_feat,
             future_time_feat=future_time_feat,
             future_target=future_target_reshaped,
-        ) # distr_args is a tuple with two tensors of shape (bsz, context_length+pred_len-1)
-        context_target = take_last(past_target, dim=-1, num=self.context_length - 1) # (bsz, context_length-1) # Basically removes the first value since it cannot be predicted
+        )  # distr_args is a tuple with two tensors of shape (bsz, context_length+pred_len-1)
+        context_target = take_last(
+            past_target, dim=-1, num=self.context_length - 1
+        )  # (bsz, context_length-1) # Basically removes the first value since it cannot be predicted
         target = torch.cat(
             (context_target, future_target_reshaped),
             dim=1,
         )  # (bsz, context_length-1+pred_len) # values that can be predicted
         context_observed = take_last(
             past_observed_values, dim=-1, num=self.context_length - 1
-        ) # same as context_target, but for observed_values tensor
-        observed_values = torch.cat((context_observed, future_observed_reshaped), dim=1) # same as target but for observed_values tensor
-    
+        )  # same as context_target, but for observed_values tensor
+        observed_values = torch.cat(
+            (context_observed, future_observed_reshaped), dim=1
+        )  # same as target but for observed_values tensor
+
         if type(self.model.distr_output) == ImplicitQuantileNetworkOutput:
             if not do_not_average:
                 loss = (
-                    self.model.distr_output.loss(target, distr_args, loc, scale) * observed_values
+                    self.model.distr_output.loss(target, distr_args, loc, scale)
+                    * observed_values
                 ).sum() / observed_values.sum().clamp_min(1.0)
             else:
-                loss = self.model.distr_output.loss(target, distr_args, loc, scale) * observed_values
+                loss = (
+                    self.model.distr_output.loss(target, distr_args, loc, scale)
+                    * observed_values
+                )
         else:
-            distr = self.model.distr_output.distribution(distr_args, loc=loc, scale=scale) # an object representing a distribution with the specified parameters. We need this to compute the NLL loss.
+            distr = self.model.distr_output.distribution(
+                distr_args, loc=loc, scale=scale
+            )  # an object representing a distribution with the specified parameters. We need this to compute the NLL loss.
             if not do_not_average:
                 loss = (
                     self.loss(distr, target) * observed_values
@@ -509,7 +522,9 @@ class LagLlamaLightningModule(pl.LightningModule):
             self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
         if self.use_cosine_annealing_lr:
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, **self.cosine_annealing_lr_args, verbose=True)
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, **self.cosine_annealing_lr_args, verbose=True
+            )
             return {"optimizer": optimizer, "lr_scheduler": scheduler}
         else:
             return optimizer

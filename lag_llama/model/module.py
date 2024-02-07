@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 import torch
-from gluonts.torch.distributions import StudentTOutput
 from gluonts.torch.scaler import MeanScaler, NOPScaler, StdScaler
 from gluonts.torch.util import lagged_sequence_values, unsqueeze_expand
 from torch import nn
@@ -12,8 +11,7 @@ from torch.nn import functional as F
 from gluon_utils.scalers.robust_scaler import RobustScaler
 from gluonts.torch.distributions import DistributionOutput
 
-from gluonts.torch.distributions import StudentTOutput
-from gluon_utils.gluon_ts_distributions.implicit_quantile_network import ImplicitQuantileNetworkOutput
+
 
 @dataclass
 class LTSMConfig:
@@ -422,7 +420,7 @@ class LagLlamaModel(nn.Module):
         rope_scaling=None,
         num_parallel_samples: int = 100,
         time_feat: bool = True,
-        dropout: float = 0.0
+        dropout: float = 0.0,
     ) -> None:
         super().__init__()
         self.context_length = context_length
@@ -439,7 +437,7 @@ class LagLlamaModel(nn.Module):
             block_size=max_context_length,
             feature_size=feature_size,
             rope_scaling=rope_scaling,
-            dropout=dropout
+            dropout=dropout,
         )
         self.num_parallel_samples = num_parallel_samples
 
@@ -456,7 +454,7 @@ class LagLlamaModel(nn.Module):
         self.param_proj = self.distr_output.get_args_proj(
             config.n_embd_per_head * config.n_head
         )
-        
+
         self.transformer = nn.ModuleDict(
             dict(
                 wte=nn.Linear(

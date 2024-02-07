@@ -21,6 +21,7 @@ from torch.distributions import Distribution, Beta, constraints
 
 from gluonts.core.component import validated
 from gluonts.torch.distributions import DistributionOutput
+
 # from gluonts.torch.distributions.distribution_output import DistributionOutput
 from gluonts.torch.modules.lambda_layer import LambdaLayer
 
@@ -68,9 +69,7 @@ class ImplicitQuantileModule(nn.Module):
         super().__init__()
         self.output_domain_map = output_domain_map
         self.domain_map = domain_map
-        self.beta = Beta(
-            concentration1=concentration1, concentration0=concentration0
-        )
+        self.beta = Beta(concentration1=concentration1, concentration0=concentration0)
 
         self.quantile_layer = QuantileLayer(
             in_features, cos_embedding_dim=cos_embedding_dim
@@ -85,9 +84,7 @@ class ImplicitQuantileModule(nn.Module):
 
     def forward(self, inputs: torch.Tensor):
         if self.training:
-            taus = self.beta.sample(sample_shape=inputs.shape[:-1]).to(
-                inputs.device
-            )
+            taus = self.beta.sample(sample_shape=inputs.shape[:-1]).to(inputs.device)
         else:
             taus = torch.rand(size=inputs.shape[:-1], device=inputs.device)
 
@@ -117,15 +114,11 @@ class ImplicitQuantileNetwork(Distribution):
 
     arg_constraints: Dict[str, constraints.Constraint] = {}
 
-    def __init__(
-        self, outputs: torch.Tensor, taus: torch.Tensor, validate_args=None
-    ):
+    def __init__(self, outputs: torch.Tensor, taus: torch.Tensor, validate_args=None):
         self.taus = taus
         self.outputs = outputs
 
-        super().__init__(
-            batch_shape=outputs.shape, validate_args=validate_args
-        )
+        super().__init__(batch_shape=outputs.shape, validate_args=validate_args)
 
     @torch.no_grad()
     def sample(self, sample_shape=torch.Size()) -> torch.Tensor:
@@ -134,9 +127,7 @@ class ImplicitQuantileNetwork(Distribution):
     def quantile_loss(self, value: torch.Tensor) -> torch.Tensor:
         # penalize by tau for under-predicting
         # and by 1-tau for over-predicting
-        return (self.taus - (value < self.outputs).float()) * (
-            value - self.outputs
-        )
+        return (self.taus - (value < self.outputs).float()) * (value - self.outputs)
 
 
 class ImplicitQuantileNetworkOutput(DistributionOutput):
@@ -202,9 +193,7 @@ class ImplicitQuantileNetworkOutput(DistributionOutput):
     def domain_map(cls, *args):
         return args
 
-    def distribution(
-        self, distr_args, loc=0, scale=None
-    ) -> ImplicitQuantileNetwork:
+    def distribution(self, distr_args, loc=0, scale=None) -> ImplicitQuantileNetwork:
         (outputs, taus) = distr_args
 
         if scale is not None:
@@ -226,7 +215,6 @@ class ImplicitQuantileNetworkOutput(DistributionOutput):
     ) -> torch.Tensor:
         distribution = self.distribution(distr_args, loc=loc, scale=scale)
         return distribution.quantile_loss(target)
-
 
 
 iqn = ImplicitQuantileNetworkOutput()

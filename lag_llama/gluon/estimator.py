@@ -28,8 +28,10 @@ from gluonts.transform import (
     ValidationSplitSampler,
 )
 
-from gluonts.torch.distributions import DistributionOutput, StudentTOutput
-from gluon_utils.gluon_ts_distributions.implicit_quantile_network import ImplicitQuantileNetworkOutput
+from gluonts.torch.distributions import StudentTOutput
+from gluon_utils.gluon_ts_distributions.implicit_quantile_network import (
+    ImplicitQuantileNetworkOutput,
+)
 
 from lag_llama.gluon.lightning_module import LagLlamaLightningModule
 
@@ -152,12 +154,12 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
 
         lag_indices = []
         for freq in lags_seq:
-            lag_indices.extend(get_lags_for_frequency(freq_str=freq, num_default_lags=1))
+            lag_indices.extend(
+                get_lags_for_frequency(freq_str=freq, num_default_lags=1)
+            )
 
         if len(lag_indices):
-            self.lags_seq = sorted(
-                set(lag_indices)
-            )
+            self.lags_seq = sorted(set(lag_indices))
             self.lags_seq = [lag_index - 1 for lag_index in self.lags_seq]
         else:
             self.lags_seq = []
@@ -272,7 +274,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
             "num_parallel_samples": self.num_parallel_samples,
             "rope_scaling": self.rope_scaling,
             "time_feat": self.time_feat,
-            "dropout": self.dropout
+            "dropout": self.dropout,
         }
         if self.ckpt_path is not None:
             return LagLlamaLightningModule.load_from_checkpoint(
@@ -310,7 +312,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
                 data_id_to_name_map=self.data_id_to_name_map,
                 use_cosine_annealing_lr=self.use_cosine_annealing_lr,
                 cosine_annealing_lr_args=self.cosine_annealing_lr_args,
-                track_loss_per_series=self.track_loss_per_series
+                track_loss_per_series=self.track_loss_per_series,
             )
         else:
             return LagLlamaLightningModule(
@@ -347,7 +349,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
                 data_id_to_name_map=self.data_id_to_name_map,
                 use_cosine_annealing_lr=self.use_cosine_annealing_lr,
                 cosine_annealing_lr_args=self.cosine_annealing_lr_args,
-                track_loss_per_series=self.track_loss_per_series
+                track_loss_per_series=self.track_loss_per_series,
             )
 
     def _create_instance_splitter(self, module: LagLlamaLightningModule, mode: str):
