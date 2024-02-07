@@ -19,7 +19,7 @@ This repository houses the Lag-Llama architecture.
 
 <b>Current Features:</b>
 
-💫 <b>Zero-shot forecasting</b> on a dataset of <b>any frequency</b> for <b>any prediction length</b>, using the <a href="https://colab.research.google.com/drive/13HHKYL_HflHBKxDWycXgIUAHSeHRR5eo?usp=sharing">Colab Demo.</a><br/>
+💫 <b>Zero-shot forecasting</b> on a dataset of <b>any frequency</b> for <b>any prediction length</b>, using the <a href="https://colab.research.google.com/drive/13HHKYL_HflHBKxDWycXgIUAHSeHRR5eo?usp=sharing" target="_blank">Colab Demo.</a><br/>
 
 ____
 
