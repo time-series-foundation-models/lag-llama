@@ -6,29 +6,37 @@ Lag-Llama is the <b>first open-source foundation model for time series forecasti
 
 Twitter Thread: https://twitter.com.
 
-HuggingFace: {}
+HuggingFace: https://huggingface.co/time-series-foundation-models/Lag-Llama
 
-Colab Demo: {}
+Colab Demo: https://colab.research.google.com/drive/13HHKYL_HflHBKxDWycXgIUAHSeHRR5eo?usp=sharing
 
-Paper: {Not arxiv}.
+Paper: https://time-series-foundation-models.github.io/lag-llama.pdf
 
 arXiv has a previous outdated version of the paper and is still being updated with the latest version; please use the above link to access the latest version.
 
+____
 This repository houses the Lag-Llama architecture.
 
 <b>Current Features:</b>
 
-1. <b>Zero-shot forecasting</b> on a dataset of <b>any frequency</b> for <b>any prediction length</b>, using the Colab Demo.
+💫 <b>Zero-shot forecasting</b> on a dataset of <b>any frequency</b> for <b>any prediction length</b>, using the <a href="https://colab.research.google.com/drive/13HHKYL_HflHBKxDWycXgIUAHSeHRR5eo?usp=sharing">Colab Demo.</a><br/>
+
+____
 
 Coming Soon:
 
-1. An <b>online gradio demo</b> to upload time series and get zero-shot predictions for
-1. Features for <b>finetuning</b> the foundation model
-2. Features for <b>pretraining</b> Lag-Llama on your own large-scale data
-3. Scripts to <b>reproduce</b> all results in the paper.
+⭐ An <b>online gradio demo</b> where you can upload time series and get zero-shot predictions.
+
+⭐ Features for <b>finetuning</b> the foundation model
+
+⭐ Features for <b>pretraining</b> Lag-Llama on your own large-scale data
+
+⭐ Scripts to <b>reproduce</b> all results in the paper.
 
 
-Stay Tuned!
+____
+
+Stay Tuned!🦙
 
 
 
