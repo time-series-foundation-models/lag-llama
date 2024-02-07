@@ -6,11 +6,13 @@ Lag-Llama is the <b>first open-source foundation model for time series forecasti
 
 Twitter Thread: https://twitter.com.
 
-HuggingFace: https://huggingface.co/time-series-foundation-models/Lag-Llama
+HuggingFace: https://huggingface.co/time-series-foundation-models/Lag-Llama 
 
-Colab Demo: https://colab.research.google.com/drive/13HHKYL_HflHBKxDWycXgIUAHSeHRR5eo?usp=sharing
+Colab Demo: https://colab.research.google.com/drive/13HHKYL_HflHBKxDWycXgIUAHSeHRR5eo?usp=sharing 
 
-Paper: https://time-series-foundation-models.github.io/lag-llama.pdf
+GitHub: https://github.com/time-series-foundation-models/lag-llama 
+
+Paper: https://time-series-foundation-models.github.io/lag-llama.pdf 
 
 arXiv has a previous outdated version of the paper and is still being updated with the latest version; please use the above link to access the latest version.
 
