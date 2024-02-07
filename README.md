@@ -4,8 +4,6 @@
 
 Lag-Llama is the <b>first open-source foundation model for time series forecasting</b>!
 
-Twitter Thread: https://twitter.com.
-
 HuggingFace: https://huggingface.co/time-series-foundation-models/Lag-Llama 
 
 Colab Demo: https://colab.research.google.com/drive/13HHKYL_HflHBKxDWycXgIUAHSeHRR5eo?usp=sharing 
