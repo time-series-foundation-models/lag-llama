@@ -4,3 +4,4 @@ pytorch_lightning==2.0.4
 torch>=2.0.0
 wandb
 scipy
+pandas==2.1.4
