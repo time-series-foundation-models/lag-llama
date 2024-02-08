@@ -1,4 +1,4 @@
-gluonts==0.13.3
+gluonts==0.14.4
 numpy==1.23.5
 pytorch_lightning==2.0.4
 torch>=2.0.0
