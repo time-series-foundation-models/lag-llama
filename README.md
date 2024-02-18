@@ -26,7 +26,7 @@ ____
 
 Coming Soon:
 
-⭐ An <b>online gradio demo</b> where you can upload time series and get zero-shot predictions.
+⭐ An <b>online gradio demo</b> where you can upload time series and get zero-shot predictions and perform finetuning.
 
 ⭐ Features for <b>finetuning</b> the foundation model
 
