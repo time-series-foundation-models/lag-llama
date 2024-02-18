@@ -11,6 +11,8 @@ This repository houses the Lag-Llama architecture.
 
 ____
 
+* **Coming Next**: Fine-tuning scripts with examples on real-world datasets and best practices in using Lag-Llama!🚀  
+
 <b>Updates</b>:
 
 * **17-Feb-2024**: We have released a new updated [Colab Demo](https://colab.research.google.com/drive/1XxrLW9VGPlZDw3efTvUi0hQimgJOwQG6?usp=sharing) for zero-shot forecasting that shows how one can load time series of different formats.
