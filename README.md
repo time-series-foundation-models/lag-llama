@@ -41,6 +41,23 @@ ____
 
 Stay Tuned!🦙
 
+____
+
+## Citing this work
+
+Please use the following Bibtex entry to cite Lag-Llama.
+
+```
+@misc{rasul2024lagllama,
+      title={Lag-Llama: Towards Foundation Models for Probabilistic Time Series Forecasting}, 
+      author={Kashif Rasul and Arjun Ashok and Andrew Robert Williams and Hena Ghonia and Rishika Bhagwatkar and Arian Khorasani and Mohammad Javad Darvishi Bayazi and George Adamopoulos and Roland Riachi and Nadhir Hassen and Marin Biloš and Sahil Garg and Anderson Schneider and Nicolas Chapados and Alexandre Drouin and Valentina Zantedeschi and Yuriy Nevmyvaka and Irina Rish},
+      year={2024},
+      eprint={2310.08278},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG}
+}
+```
+
 
 
 
