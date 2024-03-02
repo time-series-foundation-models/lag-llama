@@ -2,6 +2,7 @@ from typing import Any, Dict, Iterable, Optional
 
 import pytorch_lightning as pl
 import torch
+
 from gluonts.core.component import validated
 from gluonts.dataset.common import Dataset
 from gluonts.dataset.field_names import FieldName
@@ -12,6 +13,7 @@ from gluonts.time_feature import (
     get_lags_for_frequency,
     time_features_from_frequency_str,
 )
+from gluonts.torch.distributions import StudentTOutput
 from gluonts.torch.model.estimator import PyTorchLightningEstimator
 from gluonts.torch.model.predictor import PyTorchPredictor
 from gluonts.torch.modules.loss import DistributionLoss, NegativeLogLikelihood
@@ -28,11 +30,9 @@ from gluonts.transform import (
     ValidationSplitSampler,
 )
 
-from gluonts.torch.distributions import StudentTOutput
 from gluon_utils.gluon_ts_distributions.implicit_quantile_network import (
     ImplicitQuantileNetworkOutput,
 )
-
 from lag_llama.gluon.lightning_module import LagLlamaLightningModule
 
 PREDICTION_INPUT_NAMES = [
@@ -140,6 +140,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         cosine_annealing_lr_args: dict = {},
         track_loss_per_series: bool = False,
         ckpt_path: Optional[str] = None,
+        nonnegative_pred_samples: bool = False,
     ) -> None:
         default_trainer_kwargs = {"max_epochs": 100}
         if trainer_kwargs is not None:
@@ -180,6 +181,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         self.loss = loss
         self.batch_size = batch_size
         self.num_batches_per_epoch = num_batches_per_epoch
+        self.nonnegative_pred_samples = nonnegative_pred_samples
 
         self.train_sampler = train_sampler or ExpectedNumInstanceSampler(
             num_instances=1.0, min_future=prediction_length
@@ -313,6 +315,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
                 use_cosine_annealing_lr=self.use_cosine_annealing_lr,
                 cosine_annealing_lr_args=self.cosine_annealing_lr_args,
                 track_loss_per_series=self.track_loss_per_series,
+                nonnegative_pred_samples=self.nonnegative_pred_samples,
             )
         else:
             return LagLlamaLightningModule(
@@ -350,6 +353,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
                 use_cosine_annealing_lr=self.use_cosine_annealing_lr,
                 cosine_annealing_lr_args=self.cosine_annealing_lr_args,
                 track_loss_per_series=self.track_loss_per_series,
+                nonnegative_pred_samples=self.nonnegative_pred_samples,
             )
 
     def _create_instance_splitter(self, module: LagLlamaLightningModule, mode: str):

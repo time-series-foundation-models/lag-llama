@@ -1,16 +1,12 @@
 # Following code is to import from the parent directory (for augmentation)
-import inspect
-import os
-import sys
-
-currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-parentdir = os.path.dirname(os.path.dirname(currentdir))
-sys.path.insert(0, parentdir)
+import random
 
 import numpy as np
+
 import pytorch_lightning as pl
 import torch
-import random
+import torch.nn.functional as F
+
 from gluonts.core.component import validated
 from gluonts.itertools import prod
 from gluonts.torch.modules.loss import DistributionLoss, NegativeLogLikelihood
@@ -29,11 +25,9 @@ from data.augmentations.gluonts_augmentations import (
     WindowSlice,
     WindowWarp,
 )
-
 from gluon_utils.gluon_ts_distributions.implicit_quantile_network import (
     ImplicitQuantileNetworkOutput,
 )
-
 from lag_llama.model.module import LagLlamaModel
 
 
@@ -93,6 +87,7 @@ class LagLlamaLightningModule(pl.LightningModule):
         use_cosine_annealing_lr: bool = False,
         cosine_annealing_lr_args: dict = {},
         track_loss_per_series: bool = False,
+        nonnegative_pred_samples: bool = False,
         use_kv_cache: bool = True,
     ):
         super().__init__()
@@ -129,6 +124,7 @@ class LagLlamaLightningModule(pl.LightningModule):
         self.use_cosine_annealing_lr = self.hparams.use_cosine_annealing_lr
         self.cosine_annealing_lr_args = self.hparams.cosine_annealing_lr_args
         self.track_loss_per_series = self.hparams.track_loss_per_series
+        self.nonnegative_pred_samples = self.hparams.nonnegative_pred_samples
 
         self.time_feat = self.hparams.model_kwargs["time_feat"]
         # data_id based
@@ -255,6 +251,8 @@ class LagLlamaLightningModule(pl.LightningModule):
             ]  # Take the last timestep predicted. Each tensor is of shape (#bsz*#parallel_samples, 1)
             distr = self.model.distr_output.distribution(sliced_params, loc, scale)
             sample = distr.sample()  # (#bsz*#parallel_samples, 1)
+            if self.nonnegative_pred_samples:
+                sample = F.relu(sample)
             future_samples.append(sample)
 
             repeated_past_target = torch.cat((repeated_past_target, sample), dim=1)
