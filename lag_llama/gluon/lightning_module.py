@@ -427,8 +427,7 @@ class LagLlamaLightningModule(LightningModule):
             batch, do_not_average=True, return_observed_values=True
         )
 
-        val_loss_without_test_set = 0.0
-        val_loss_avg = val_loss_without_test_set / observed_values.sum().clamp_min(1.0)
+        val_loss_avg = val_loss_per_sample.sum() / observed_values.sum().clamp_min(1.0)
         self.log("val_loss", val_loss_avg, on_epoch=True, on_step=False, prog_bar=False)
         return val_loss_avg
 
