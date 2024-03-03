@@ -184,7 +184,9 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         self.nonnegative_pred_samples = nonnegative_pred_samples
 
         self.train_sampler = train_sampler or ExpectedNumInstanceSampler(
-            num_instances=1.0, min_future=prediction_length
+            num_instances=1.0,
+            min_future=prediction_length,
+            min_instances=1,
         )
         self.validation_sampler = validation_sampler or ValidationSplitSampler(
             min_future=prediction_length
@@ -243,7 +245,6 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
                         time_features=time_features_from_frequency_str("S"),
                         pred_length=self.prediction_length,
                     ),
-                    # FilterTransformation(lambda x: sum(abs(x[FieldName.TARGET])) > 0),
                     AddObservedValuesIndicator(
                         target_field=FieldName.TARGET,
                         output_field=FieldName.OBSERVED_VALUES,
@@ -396,7 +397,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
                 batch_size=self.batch_size,
                 shuffle_buffer_length=shuffle_buffer_length,
                 field_names=TRAINING_INPUT_NAMES
-                + ["past_time_feat", "future_time_feat", "data_id", "item_id"],
+                + ["past_time_feat", "future_time_feat"],
                 output_type=torch.tensor,
                 num_batches_per_epoch=self.num_batches_per_epoch,
             )
@@ -406,7 +407,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
                 instances,
                 batch_size=self.batch_size,
                 shuffle_buffer_length=shuffle_buffer_length,
-                field_names=TRAINING_INPUT_NAMES + ["data_id", "item_id"],
+                field_names=TRAINING_INPUT_NAMES,
                 output_type=torch.tensor,
                 num_batches_per_epoch=self.num_batches_per_epoch,
             )
@@ -425,14 +426,14 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
                 instances,
                 batch_size=self.batch_size,
                 field_names=TRAINING_INPUT_NAMES
-                + ["past_time_feat", "future_time_feat", "data_id", "item_id"],
+                + ["past_time_feat", "future_time_feat"],
                 output_type=torch.tensor,
             )
         else:
             return as_stacked_batches(
                 instances,
                 batch_size=self.batch_size,
-                field_names=TRAINING_INPUT_NAMES + ["data_id", "item_id"],
+                field_names=TRAINING_INPUT_NAMES,
                 output_type=torch.tensor,
             )
 

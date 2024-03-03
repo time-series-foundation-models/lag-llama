@@ -382,26 +382,6 @@ class LagLlamaLightningModule(pl.LightningModule):
         train_loss_per_sample, observed_values = self._compute_loss(
             batch, do_not_average=True, return_observed_values=True
         )
-        for idx, data_id in enumerate(batch["data_id"]):
-            if data_id not in self.train_loss_dict:
-                self.train_loss_dict[data_id.item()] = []
-            self.train_loss_dict[data_id.item()].append(
-                (
-                    train_loss_per_sample[idx].sum()
-                    / observed_values[idx].sum().clamp_min(1.0)
-                ).item()
-            )
-
-        if self.track_loss_per_series:
-            for idx, item_id in enumerate(batch["item_id"]):
-                if item_id not in self.train_loss_dict_per_series:
-                    self.train_loss_dict_per_series[item_id.item()] = []
-                self.train_loss_dict_per_series[item_id.item()].append(
-                    (
-                        train_loss_per_sample[idx].sum()
-                        / observed_values[idx].sum().clamp_min(1.0)
-                    ).item()
-                )
 
         train_loss_avg = train_loss_per_sample.sum() / observed_values.sum().clamp_min(
             1.0
@@ -448,29 +428,6 @@ class LagLlamaLightningModule(pl.LightningModule):
         )
 
         val_loss_without_test_set = 0.0
-        for idx, data_id in enumerate(batch["data_id"]):
-            if data_id not in self.val_loss_dict:
-                self.val_loss_dict[data_id.item()] = []
-            self.val_loss_dict[data_id.item()].append(
-                (
-                    val_loss_per_sample[idx].sum()
-                    / observed_values[idx].sum().clamp_min(1.0)
-                ).item()
-            )
-            if data_id >= 0:
-                val_loss_without_test_set += val_loss_per_sample[idx].sum()
-
-        if self.track_loss_per_series:
-            for idx, item_id in enumerate(batch["item_id"]):
-                if item_id not in self.val_loss_dict_per_series:
-                    self.val_loss_dict_per_series[item_id.item()] = []
-                self.val_loss_dict_per_series[item_id.item()].append(
-                    (
-                        val_loss_per_sample[idx].sum()
-                        / observed_values[idx].sum().clamp_min(1.0)
-                    ).item()
-                )
-
         val_loss_avg = val_loss_without_test_set / observed_values.sum().clamp_min(1.0)
         self.log("val_loss", val_loss_avg, on_epoch=True, on_step=False, prog_bar=False)
         return val_loss_avg
