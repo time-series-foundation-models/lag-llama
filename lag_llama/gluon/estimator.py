@@ -13,7 +13,7 @@ from gluonts.time_feature import (
     get_lags_for_frequency,
     time_features_from_frequency_str,
 )
-from gluonts.torch.distributions import StudentTOutput
+from gluonts.torch.distributions import StudentTOutput, NegativeBinomialOutput
 from gluonts.torch.model.estimator import PyTorchLightningEstimator
 from gluonts.torch.model.predictor import PyTorchPredictor
 from gluonts.torch.modules.loss import DistributionLoss, NegativeLogLikelihood
@@ -174,6 +174,8 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         self.weight_decay = weight_decay
         if distr_output == "studentT":
             distr_output = StudentTOutput()
+        elif distr_output == "neg_bin":
+            distr_output = NegativeBinomialOutput()
         elif distr_output == "iqn":
             distr_output = ImplicitQuantileNetworkOutput()
         self.distr_output = distr_output
@@ -282,6 +284,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         if self.ckpt_path is not None:
             return LagLlamaLightningModule.load_from_checkpoint(
                 checkpoint_path=self.ckpt_path,
+                strict=False,
                 loss=self.loss,
                 lr=self.lr,
                 weight_decay=self.weight_decay,

@@ -3,7 +3,7 @@ import random
 
 import numpy as np
 
-import pytorch_lightning as pl
+from lightning import LightningModule
 import torch
 import torch.nn.functional as F
 
@@ -31,7 +31,7 @@ from gluon_utils.gluon_ts_distributions.implicit_quantile_network import (
 from lag_llama.model.module import LagLlamaModel
 
 
-class LagLlamaLightningModule(pl.LightningModule):
+class LagLlamaLightningModule(LightningModule):
     """
     A ``pl.LightningModule`` class that can be used to train a
     ``LagLlamaLightningModule`` with PyTorch Lightning.
