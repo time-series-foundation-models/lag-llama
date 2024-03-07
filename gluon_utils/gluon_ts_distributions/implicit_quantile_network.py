@@ -12,17 +12,15 @@
 # permissions and limitations under the License.
 
 from functools import partial
-from typing import Dict, Optional, Tuple, Callable
+from typing import Callable, Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.distributions import Distribution, Beta, constraints
+from torch.distributions import Beta, Distribution, constraints
 
 from gluonts.core.component import validated
 from gluonts.torch.distributions import DistributionOutput
-
-# from gluonts.torch.distributions.distribution_output import DistributionOutput
 from gluonts.torch.modules.lambda_layer import LambdaLayer
 
 

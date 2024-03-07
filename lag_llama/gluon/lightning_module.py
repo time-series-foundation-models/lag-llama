@@ -1,16 +1,12 @@
 # Following code is to import from the parent directory (for augmentation)
-import inspect
-import os
-import sys
-
-currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-parentdir = os.path.dirname(os.path.dirname(currentdir))
-sys.path.insert(0, parentdir)
+import random
 
 import numpy as np
-import pytorch_lightning as pl
+
+from lightning import LightningModule
 import torch
-import random
+import torch.nn.functional as F
+
 from gluonts.core.component import validated
 from gluonts.itertools import prod
 from gluonts.torch.modules.loss import DistributionLoss, NegativeLogLikelihood
@@ -29,15 +25,13 @@ from data.augmentations.gluonts_augmentations import (
     WindowSlice,
     WindowWarp,
 )
-
 from gluon_utils.gluon_ts_distributions.implicit_quantile_network import (
     ImplicitQuantileNetworkOutput,
 )
-
 from lag_llama.model.module import LagLlamaModel
 
 
-class LagLlamaLightningModule(pl.LightningModule):
+class LagLlamaLightningModule(LightningModule):
     """
     A ``pl.LightningModule`` class that can be used to train a
     ``LagLlamaLightningModule`` with PyTorch Lightning.
@@ -93,6 +87,7 @@ class LagLlamaLightningModule(pl.LightningModule):
         use_cosine_annealing_lr: bool = False,
         cosine_annealing_lr_args: dict = {},
         track_loss_per_series: bool = False,
+        nonnegative_pred_samples: bool = False,
         use_kv_cache: bool = True,
     ):
         super().__init__()
@@ -129,6 +124,7 @@ class LagLlamaLightningModule(pl.LightningModule):
         self.use_cosine_annealing_lr = self.hparams.use_cosine_annealing_lr
         self.cosine_annealing_lr_args = self.hparams.cosine_annealing_lr_args
         self.track_loss_per_series = self.hparams.track_loss_per_series
+        self.nonnegative_pred_samples = self.hparams.nonnegative_pred_samples
 
         self.time_feat = self.hparams.model_kwargs["time_feat"]
         # data_id based
@@ -255,6 +251,8 @@ class LagLlamaLightningModule(pl.LightningModule):
             ]  # Take the last timestep predicted. Each tensor is of shape (#bsz*#parallel_samples, 1)
             distr = self.model.distr_output.distribution(sliced_params, loc, scale)
             sample = distr.sample()  # (#bsz*#parallel_samples, 1)
+            if self.nonnegative_pred_samples:
+                sample = F.relu(sample)
             future_samples.append(sample)
 
             repeated_past_target = torch.cat((repeated_past_target, sample), dim=1)
@@ -384,26 +382,6 @@ class LagLlamaLightningModule(pl.LightningModule):
         train_loss_per_sample, observed_values = self._compute_loss(
             batch, do_not_average=True, return_observed_values=True
         )
-        for idx, data_id in enumerate(batch["data_id"]):
-            if data_id not in self.train_loss_dict:
-                self.train_loss_dict[data_id.item()] = []
-            self.train_loss_dict[data_id.item()].append(
-                (
-                    train_loss_per_sample[idx].sum()
-                    / observed_values[idx].sum().clamp_min(1.0)
-                ).item()
-            )
-
-        if self.track_loss_per_series:
-            for idx, item_id in enumerate(batch["item_id"]):
-                if item_id not in self.train_loss_dict_per_series:
-                    self.train_loss_dict_per_series[item_id.item()] = []
-                self.train_loss_dict_per_series[item_id.item()].append(
-                    (
-                        train_loss_per_sample[idx].sum()
-                        / observed_values[idx].sum().clamp_min(1.0)
-                    ).item()
-                )
 
         train_loss_avg = train_loss_per_sample.sum() / observed_values.sum().clamp_min(
             1.0
@@ -449,31 +427,7 @@ class LagLlamaLightningModule(pl.LightningModule):
             batch, do_not_average=True, return_observed_values=True
         )
 
-        val_loss_without_test_set = 0.0
-        for idx, data_id in enumerate(batch["data_id"]):
-            if data_id not in self.val_loss_dict:
-                self.val_loss_dict[data_id.item()] = []
-            self.val_loss_dict[data_id.item()].append(
-                (
-                    val_loss_per_sample[idx].sum()
-                    / observed_values[idx].sum().clamp_min(1.0)
-                ).item()
-            )
-            if data_id >= 0:
-                val_loss_without_test_set += val_loss_per_sample[idx].sum()
-
-        if self.track_loss_per_series:
-            for idx, item_id in enumerate(batch["item_id"]):
-                if item_id not in self.val_loss_dict_per_series:
-                    self.val_loss_dict_per_series[item_id.item()] = []
-                self.val_loss_dict_per_series[item_id.item()].append(
-                    (
-                        val_loss_per_sample[idx].sum()
-                        / observed_values[idx].sum().clamp_min(1.0)
-                    ).item()
-                )
-
-        val_loss_avg = val_loss_without_test_set / observed_values.sum().clamp_min(1.0)
+        val_loss_avg = val_loss_per_sample.sum() / observed_values.sum().clamp_min(1.0)
         self.log("val_loss", val_loss_avg, on_epoch=True, on_step=False, prog_bar=False)
         return val_loss_avg
 
