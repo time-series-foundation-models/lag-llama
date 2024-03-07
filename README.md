@@ -24,6 +24,9 @@ Current Features:
 
 💫 <b>Zero-shot forecasting</b> on a dataset of <b>any frequency</b> for <b>any prediction length</b>, using the <a href="https://colab.research.google.com/drive/1XxrLW9VGPlZDw3efTvUi0hQimgJOwQG6?usp=sharing" target="_blank">Colab Demo.</a><br/>
 
+
+<b>Fine-tuning</b> on a dataset: [Colab Demo](https://colab.research.google.com/drive/1uvTmh-pe1zO5TeaaRVDdoEWJ5dFDI-pA?usp=sharing)
+
 ____
 
 Coming Soon:
