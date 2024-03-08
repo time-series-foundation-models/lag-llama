@@ -11,10 +11,11 @@ This repository houses the Lag-Llama architecture.
 
 ____
 
-* **Coming Next**: Fine-tuning scripts with examples on real-world datasets and best practices in using Lag-Llama!🚀  
+* **Coming Next**: Detailed Fine-tuning Tutorial with examples on real-world datasets and best practices in using Lag-Llama!🚀  
 
 <b>Updates</b>:
 
+* **7-Mar-2024**: We have released a preliminary [Colab Demo](https://colab.research.google.com/drive/1uvTmh-pe1zO5TeaaRVDdoEWJ5dFDI-pA?usp=sharing) for finetuning, while we prepare a detailed tutorial. Please note this is preliminary and cannot be used for benchmarking. A detailed demo with instructions for benchmarking is coming soon along with the tutorial. 
 * **17-Feb-2024**: We have released a new updated [Colab Demo](https://colab.research.google.com/drive/1XxrLW9VGPlZDw3efTvUi0hQimgJOwQG6?usp=sharing) for zero-shot forecasting that shows how one can load time series of different formats.
 * **7-Feb-2024**: We released Lag-Llama, with open-source model checkpoints and a Colab Demo for zero-shot forecasting.
 
@@ -24,21 +25,19 @@ Current Features:
 
 💫 <b>Zero-shot forecasting</b> on a dataset of <b>any frequency</b> for <b>any prediction length</b>, using the <a href="https://colab.research.google.com/drive/1XxrLW9VGPlZDw3efTvUi0hQimgJOwQG6?usp=sharing" target="_blank">Colab Demo.</a><br/>
 
-
-<b>Fine-tuning</b> on a dataset: [Colab Demo](https://colab.research.google.com/drive/1uvTmh-pe1zO5TeaaRVDdoEWJ5dFDI-pA?usp=sharing)
+💫 (Preliminary) <b>Finetuning</b> on a dataset using the [Colab Demo](https://colab.research.google.com/drive/1uvTmh-pe1zO5TeaaRVDdoEWJ5dFDI-pA?usp=sharing).
 
 ____
 
 Coming Soon:
 
-⭐ An <b>online gradio demo</b> where you can upload time series and get zero-shot predictions and perform finetuning.
+⭐ A tutorial for <b>finetuning</b> Lag-Llama.
 
-⭐ Features for <b>finetuning</b> the foundation model
-
-⭐ Features for <b>pretraining</b> Lag-Llama on your own large-scale data
+⭐ A tutorial for <b>pretraining</b> Lag-Llama on your own large-scale data.
 
 ⭐ Scripts to <b>reproduce</b> all results in the paper.
 
+⭐ An <b>online gradio demo</b> where you can upload time series and get zero-shot predictions and perform finetuning.
 
 ____
 
