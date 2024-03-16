@@ -11,7 +11,7 @@ This repository houses the Lag-Llama architecture.
 
 ____
 
-* **Coming Next**: Detailed Fine-tuning Tutorial with examples on real-world datasets and best practices in using Lag-Llama!🚀  
+* **Coming Next**: Detailed Fine-tuning Tutorial with examples on real-world datasets and best practices in using Lag-Llama! (Coming by end of March) 🚀  
 
 <b>Updates</b>:
 
