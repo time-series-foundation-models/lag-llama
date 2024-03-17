@@ -284,6 +284,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         if self.ckpt_path is not None:
             return LagLlamaLightningModule.load_from_checkpoint(
                 checkpoint_path=self.ckpt_path,
+                map_location="cuda" if torch.cuda.is_available() else "cpu",
                 strict=False,
                 loss=self.loss,
                 lr=self.lr,
