@@ -14,7 +14,7 @@ from gluonts.torch.util import repeat_along_dim, take_last
 
 from data.augmentations.freq_mask import freq_mask
 from data.augmentations.freq_mix import freq_mix
-from data.augmentations.gluonts_augmentations import (
+from data.augmentations.augmentations import (
     ApplyAugmentations,
     Jitter,
     MagnitudeWarp,
