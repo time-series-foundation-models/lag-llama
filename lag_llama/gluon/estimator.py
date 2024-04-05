@@ -141,7 +141,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         track_loss_per_series: bool = False,
         ckpt_path: Optional[str] = None,
         nonnegative_pred_samples: bool = False,
-        device: torch.device = "cuda"
+        device: torch.device = torch.device("cuda")
     ) -> None:
         default_trainer_kwargs = {"max_epochs": 100}
         if trainer_kwargs is not None:
