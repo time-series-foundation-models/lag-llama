@@ -5,3 +5,4 @@ wandb
 scipy
 pandas==2.1.4
 huggingface_hub[cli]
+matplotlib
