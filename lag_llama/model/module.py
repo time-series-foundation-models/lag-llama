@@ -243,7 +243,7 @@ class CausalSelfAttention(nn.Module):
 
         if not isinstance(self.rope_scaling, dict) or len(self.rope_scaling) != 2:
             raise ValueError(
-                "`rope_scaling` must be a dictionary with with two fields, `name` and `factor`, "
+                "`rope_scaling` must be a dictionary with with two fields, `type` and `factor`, "
                 f"got {self.rope_scaling}"
             )
         rope_scaling_type = self.rope_scaling.get("type", None)
@@ -254,7 +254,7 @@ class CausalSelfAttention(nn.Module):
             "nope",
         ]:
             raise ValueError(
-                f"`rope_scaling`'s name field must be one of ['linear', 'dynamic'], got {rope_scaling_type}"
+                f"`rope_scaling`'s type field must be one of ['linear', 'dynamic'], got {rope_scaling_type}"
             )
         if rope_scaling_type in ["linear", "dynamic"]:
             if (
