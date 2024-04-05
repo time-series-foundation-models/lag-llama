@@ -46,6 +46,15 @@ Stay Tuned!🦙
 
 ____
 
+## Contact
+
+We are dedicated to ensuring the reproducility of our results, and would be happy to help clarify questions about benchmarking our model or about the experiments in the paper.
+The quickest way to reach us would be by email. Please email **both**: 
+1. [Arjun Ashok](https://ashok-arjun.github.io/) - arjun [dot] ashok [at] servicenow [dot] com
+2. [Kashif Rasul](https://scholar.google.de/citations?user=cfIrwmAAAAAJ&hl=en) - kashif [dot] rasul [at] gmail [dot] com
+
+If you have questions about the model usage (or) code (or) have specific errors (eg. using it with your own dataset), it would be best to create an issue in the GitHub repository.
+
 ## Citing this work
 
 Please use the following Bibtex entry to cite Lag-Llama.
