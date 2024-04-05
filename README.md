@@ -11,10 +11,11 @@ This repository houses the Lag-Llama architecture.
 
 ____
 
-* **Coming Next**: Detailed Fine-tuning Tutorial with examples on real-world datasets and best practices in using Lag-Llama! (Coming ~~by end of March~~ soon) 🚀  
+* **Coming Next**: Detailed Fine-tuning Tutorial with examples on real-world datasets and best practices in using Lag-Llama! (Coming ~~by end of March~~ soon)
 
 <b>Updates</b>:
 
+* **5-Apr-2024**: We have updated our requirements file with new versions of certain packages. Please update/recreate your environments if you have previously used the code locally.
 * **7-Mar-2024**: We have released a preliminary [Colab Demo 2](https://colab.research.google.com/drive/1uvTmh-pe1zO5TeaaRVDdoEWJ5dFDI-pA?usp=sharing) for finetuning, while we prepare a detailed tutorial. Please note this is preliminary and cannot be used for benchmarking. A detailed demo with instructions for benchmarking is coming soon along with the tutorial. 
 * **17-Feb-2024**: We have released a new updated [Colab Demo 1](https://colab.research.google.com/drive/1XxrLW9VGPlZDw3efTvUi0hQimgJOwQG6?usp=sharing) for zero-shot forecasting that shows how one can load time series of different formats.
 * **7-Feb-2024**: We released Lag-Llama, with open-source model checkpoints and a Colab Demo for zero-shot forecasting.
