@@ -1,3 +1,6 @@
+# Please download https://drive.google.com/file/d/1Zp5nuuL6arlsYmfY1wkQ0Pm42zDcRKOW/view?usp=sharing and use the below command to download the non-monash datasets (remove the #)
+# tar -xvzf nonmonash_datasets.tar.gz -C datasets
+
 mkdir -p experiments
 mkdir -p experiments/seeds
 mkdir -p experiments/results
