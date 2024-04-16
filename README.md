@@ -37,12 +37,6 @@ ____
 
 ____
 
-**We are currently looking for contributors for the following**:
-
-⭐ An <b>online gradio demo</b> where you can upload time series and get zero-shot predictions and perform finetuning.
-
-____
-
 ## Reproducing Experiments in the Paper
 
 To replicate the pretraining setup used in the paper, please see [the pretraining script](scripts/pretrain.sh). Once a model is pretrained, instructions to finetune it with the setup in the paper can be found in [the finetuning script](scripts/finetune.sh).
