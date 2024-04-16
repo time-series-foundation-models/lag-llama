@@ -165,10 +165,11 @@ experiments
 scratch/*
 wandb/*
 stats
-scripts
 hyperparameters
 data/datasets
 .DS_Store
 hyperparameters_lag_transformer
 notebooks
 datasets
+*ckpt
+*tar.gz

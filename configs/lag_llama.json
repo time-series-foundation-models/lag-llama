@@ -1,0 +1,15 @@
+{
+    "use_single_instance_sampler": true,
+    "stratified_sampling": "series",
+    "data_normalization": "robust",
+    "n_layer": 8,
+    "n_head": 9,
+    "n_embd_per_head": 16,
+    "time_feat": true,
+    "context_length": 32,
+    "aug_prob": 0.5,
+    "freq_mask_rate": 0.5,
+    "freq_mixing_rate": 0.25,
+    "weight_decay": 0.0,
+    "dropout": 0.0
+}
