@@ -77,8 +77,8 @@ def train(args):
     if args.ckpt_path:
         ckpt_path = args.ckpt_path
     elif args.get_ckpt_path_from_experiment_name:
-        fulldir_experiments_for_ckpt_path = os.path.join(args.results_dir, args.get_ckpt_path_from_experiment_name_new, str(args.seed))
-        full_experiment_name_original = args.get_ckpt_path_from_experiment_name_new + "-seed-" + str(args.seed)
+        fulldir_experiments_for_ckpt_path = os.path.join(args.results_dir, args.get_ckpt_path_from_experiment_name, str(args.seed))
+        full_experiment_name_original = args.get_ckpt_path_from_experiment_name + "-seed-" + str(args.seed)
         experiment_id_original = sha1(full_experiment_name_original.encode("utf-8")).hexdigest()[:8]
         checkpoint_dir_wandb = os.path.join(fulldir_experiments_for_ckpt_path, "lag-llama", experiment_id_original, "checkpoints")
         file = os.listdir(checkpoint_dir_wandb)[-1]
