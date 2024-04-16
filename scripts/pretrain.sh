@@ -1,4 +1,9 @@
-# Please download https://drive.google.com/file/d/1Zp5nuuL6arlsYmfY1wkQ0Pm42zDcRKOW/view?usp=sharing and use the below command to download the non-monash datasets (remove the #)
+# PLEASE FOLLOW THE BELOW INSTRUCTIONS FIRST
+
+# 1. Install the requirements. It is recommend to use a new Anaconda environment with Python 3.10.8. Execute the below command (remove the #)
+# !pip install -r requirements.txt
+
+# 2. Please download https://drive.google.com/file/d/1Zp5nuuL6arlsYmfY1wkQ0Pm42zDcRKOW/view?usp=sharing and use the below command to download the non-monash datasets (remove the #)
 # tar -xvzf nonmonash_datasets.tar.gz -C datasets
 
 mkdir -p experiments
