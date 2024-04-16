@@ -55,12 +55,8 @@ def get_ett_dataset(dataset_name, path):
     train_ds = create_train_dataset_without_last_k_timesteps(test_ds, freq=metadata.freq, k=24)
     return TrainDatasets(metadata=metadata, train=train_ds, test=test_ds)
 
-def get_household_electricity_dataset(dataset_name, path):
-    pass
-    # See main
-
 if __name__ == "__main__":
-    dataset_name = "household_electricity"
+    dataset_name = "ett_h1"
 
     if dataset_name in ("ett_h1", "ett_h2", "ett_m1", "ett_m2"):
         path = "data/datasets/ett_datasets"
@@ -88,23 +84,3 @@ if __name__ == "__main__":
         full_dataset = ListDataset(train_test_data, freq=metadata.freq)
         train_ds = create_train_dataset_without_last_k_timesteps(test_ds, freq=metadata.freq, k=24)
         ds = TrainDatasets(metadata=metadata, train=train_ds, test=full_dataset)
-
-    if dataset_name in ("alibaba_cluster_trace_2018"):
-        metadata_path = "/cloudops_dataset/cloudops_dataset/" + dataset_name + "/metadata.json"
-        with open(metadata_path, "r") as f:
-            metadata_json = json.load(f)
-        metadata = MetaData(**metadata_json)
-        json_gz_path = "/cloudops_dataset/cloudops_dataset/" + dataset_name + "/all/data.json.gz"
-        data = load_jsonl_gzip_file(json_gz_path)
-        print(data)
-
-    if dataset_name in ("household_electricity"):
-        json_path = "data/datasets/household_electricity/individual_household_power_full_dataset.json"
-        with open(json_path, "r") as f:
-            data = json.load(f)
-        test_ds = ListDataset(data, freq="T")
-        train_ds = create_train_dataset_without_last_k_timesteps(test_ds, freq="T", k=60)
-        metadata = MetaData(freq="T", prediction_length="60")
-        ds = TrainDatasets(metadata=metadata, train=train_ds, test=test_ds)
-        print(len(ds.train))
-        print(len(ds.test))
