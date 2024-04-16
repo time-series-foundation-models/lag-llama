@@ -12,9 +12,6 @@ Lag-Llama is the <b>first open-source foundation model for time series forecasti
 
 [[Video](https://www.youtube.com/watch?v=Mf2FOzDPxck)]
 ____
-This repository houses the Lag-Llama architecture.
-
-____
 
 <b>Updates</b>:
 
