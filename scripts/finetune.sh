@@ -31,7 +31,7 @@ do
         python run.py \
         -e $EXPERIMENT_NAME -d "datasets" --seed $SEED \
         -r "experiments/results" \
-        --batch_size 1 -m 5 -n 128 \
+        --batch_size 512 -m 1000 -n 128 \
         --wandb_entity "enter-wandb-entity" --wandb_project "enter-wandb-project" --wandb_tags "enter-wandb-tags-or-remove-this-argument" \
         --num_workers 2 --args_from_dict_path $CONFIGPATH --search_batch_size \
         --single_dataset $FINETUNE_DATASET \
