@@ -28,11 +28,6 @@ ____
 
 ____
 
-**Reproducing Experiments in the Paper**:
-
-To replicate the pretraining setup used in the paper, please see [the pretraining script](scripts/pretrain.sh). Once a model is pretrained, instructions to finetune it with the setup in the paper can be found in [the finetuning script](scripts/finetune.sh).
-____
-
 **Current Features**:
 
 💫 <b>Zero-shot forecasting</b> on a dataset of <b>any frequency</b> for <b>any prediction length</b>, using <a href="https://colab.research.google.com/drive/1DRAzLUPxsd-0r8b-o4nlyFXrjw_ZajJJ?usp=sharing" target="_blank">Colab Demo 1.</a><br/>
@@ -50,6 +45,11 @@ ____
 ⭐ An <b>online gradio demo</b> where you can upload time series and get zero-shot predictions and perform finetuning.
 
 ____
+
+## Reproducing Experiments in the Paper
+
+To replicate the pretraining setup used in the paper, please see [the pretraining script](scripts/pretrain.sh). Once a model is pretrained, instructions to finetune it with the setup in the paper can be found in [the finetuning script](scripts/finetune.sh).
+
 
 ## Best Practices
 
