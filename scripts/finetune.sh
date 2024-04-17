@@ -35,6 +35,7 @@ do
         --wandb_entity "enter-wandb-entity" --wandb_project "enter-wandb-project" --wandb_tags "enter-wandb-tags-or-remove-this-argument" \
         --num_workers 2 --args_from_dict_path $CONFIGPATH --search_batch_size \
         --single_dataset $FINETUNE_DATASET \
-        --get_ckpt_path_from_experiment_name $PRETRAINING_EXP_NAME --lr 0.00001 --use_dataset_prediction_length --num_validation_windows 1
+        --get_ckpt_path_from_experiment_name $PRETRAINING_EXP_NAME --lr 0.00001 --use_dataset_prediction_length --num_validation_windows 1 \
+        --single_dataset_last_k_percentage $PERCENTAGE
     done
 done
