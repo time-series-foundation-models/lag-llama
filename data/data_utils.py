@@ -16,9 +16,11 @@ import copy
 import random
 import warnings
 import json
+import os
 from pathlib import Path
 warnings.simplefilter(action="ignore", category=FutureWarning)
 warnings.simplefilter(action="ignore", category=UserWarning)
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -144,13 +146,13 @@ def create_train_and_val_datasets_with_dates(
     """
 
     if name in ("ett_h1", "ett_h2", "ett_m1", "ett_m2"):
-        path = "datasets/ett_datasets"
+        path = os.path.join(dataset_path, "ett_datasets")
         raw_dataset = get_ett_dataset(name, path)
     elif name in ("cpu_limit_minute", "cpu_usage_minute", \
                         "function_delay_minute", "instances_minute", \
                         "memory_limit_minute", "memory_usage_minute", \
                         "platform_delay_minute", "requests_minute"):
-        path = "datasets/huawei/" + name + ".json"
+        path = os.path.join(dataset_path, "huawei/" + name + ".json")
         with open(path, "r") as f: data = json.load(f)
         metadata = MetaData(**data["metadata"])
         train_data = [x for x in data["train"] if type(x["target"][0]) != str]
@@ -159,7 +161,7 @@ def create_train_and_val_datasets_with_dates(
         test_ds = ListDataset(test_data, freq=metadata.freq)
         raw_dataset = TrainDatasets(metadata=metadata, train=train_ds, test=test_ds)
     elif name in ("beijing_pm25", "AirQualityUCI", "beijing_multisite"):
-        path = "datasets/air_quality/" + name + ".json"
+        path = os.path.join(dataset_path, "air_quality/" + name + ".json")
         with open(path, "r") as f:
             data = json.load(f)
         metadata = MetaData(**data["metadata"])
@@ -168,7 +170,7 @@ def create_train_and_val_datasets_with_dates(
         train_ds = create_train_dataset_without_last_k_timesteps(full_dataset, freq=metadata.freq, k=24)
         raw_dataset = TrainDatasets(metadata=metadata, train=train_ds, test=full_dataset)
     else:
-        raw_dataset = get_dataset(name, path=dataset_path)
+        raw_dataset = get_dataset(name, path=Path(dataset_path))
 
     if prediction_length is None:
         prediction_length = raw_dataset.metadata.prediction_length
@@ -266,13 +268,13 @@ def create_test_dataset(
     """
 
     if name in ("ett_h1", "ett_h2", "ett_m1", "ett_m2"):
-        path = "datasets/ett_datasets"
+        path = os.path.join(dataset_path, "ett_datasets")
         dataset = get_ett_dataset(name, path)
     elif name in ("cpu_limit_minute", "cpu_usage_minute", \
                         "function_delay_minute", "instances_minute", \
                         "memory_limit_minute", "memory_usage_minute", \
                         "platform_delay_minute", "requests_minute"):
-        path = "datasets/huawei/" + name + ".json"
+        path = os.path.join(dataset_path, "huawei/" + name + ".json")
         with open(path, "r") as f: data = json.load(f)
         metadata = MetaData(**data["metadata"])
         train_data = [x for x in data["train"] if type(x["target"][0]) != str]
@@ -281,7 +283,7 @@ def create_test_dataset(
         test_ds = ListDataset(test_data, freq=metadata.freq)
         dataset = TrainDatasets(metadata=metadata, train=train_ds, test=test_ds)
     elif name in ("beijing_pm25", "AirQualityUCI", "beijing_multisite"):
-        path = "datasets/air_quality/" + name + ".json"
+        path = os.path.join(dataset_path, "air_quality/" + name + ".json")
         with open(path, "r") as f:
             data = json.load(f)
         metadata = MetaData(**data["metadata"])
@@ -290,7 +292,7 @@ def create_test_dataset(
         train_ds = create_train_dataset_without_last_k_timesteps(full_dataset, freq=metadata.freq, k=24)
         dataset = TrainDatasets(metadata=metadata, train=train_ds, test=full_dataset)
     else:
-        dataset = get_dataset(name, path=dataset_path)
+        dataset = get_dataset(name, path=Path(dataset_path))
 
     if freq is None:
         freq = dataset.metadata.freq

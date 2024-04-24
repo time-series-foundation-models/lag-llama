@@ -22,7 +22,6 @@ import gc
 import json
 import os
 from hashlib import sha1
-from pathlib import Path
 
 import lightning
 import torch
@@ -159,7 +158,6 @@ def train(args):
         callbacks.append(swa_callbacks)
 
     # Create train and test datasets
-    dataset_path = Path(args.dataset_path)
     if not args.single_dataset:
         train_dataset_names = args.all_datasets
         for test_dataset in args.test_datasets:
@@ -186,7 +184,7 @@ def train(args):
     # Get prediction length and set it if we are in the single dataset
     if args.single_dataset and args.use_dataset_prediction_length:
         _, prediction_length, _ = create_test_dataset(
-            args.single_dataset, dataset_path, 0
+            args.single_dataset, args.dataset_path, 0
         )
         args.prediction_length = prediction_length
 
@@ -335,7 +333,7 @@ def train(args):
                     total_points,
                 ) = create_train_and_val_datasets_with_dates(
                     name,
-                    dataset_path,
+                    args.dataset_path,
                     data_id,
                     history_length,
                     prediction_length,
@@ -388,7 +386,7 @@ def train(args):
                 total_points,
             ) = create_train_and_val_datasets_with_dates(
                 args.single_dataset,
-                dataset_path,
+                args.dataset_path,
                 0,
                 history_length,
                 prediction_length,
@@ -484,7 +482,7 @@ def train(args):
     for name in evaluation_datasets:  # [test_dataset]:
         print("Evaluating on", name)
         test_data, prediction_length, total_points = create_test_dataset(
-            name, dataset_path, window_size
+            name, args.dataset_path, window_size
         )
         print("# of Series in the test data:", len(test_data))
 
