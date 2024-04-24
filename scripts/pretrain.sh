@@ -6,6 +6,8 @@
 # 2. Please download https://drive.google.com/file/d/1JrDWMZyoPsc6d1wAAjgm3PosbGus-jCE/view?usp=sharing and use the below command to download the non-monash datasets (remove the #)
 # tar -xvzf nonmonash_datasets.tar.gz -C datasets
 
+# 3. Edit the Weights and Biases arguments on line 59 of this script
+
 mkdir -p experiments
 mkdir -p experiments/seeds
 mkdir -p experiments/results
