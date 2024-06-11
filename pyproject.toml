@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "lag-llama"
+dynamic = ["version", "dependencies"]
+description = "Lag-Llama is the first open-source foundation model for time series forecasting!"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+  {name = "Arjun Ashok", email = "arjun.ashok@servicenow.com"},
+  {name = "Kashif Rasul", email = "kashif.rasul@gmail.com"}
+]
+keywords = ["llama", "time series", "forecasting", "machine learning", "open-source", "foundation model", "lag-llama"]
+
+
+[project.urls]
+"Homepage" = "https://github.com/time-series-foundation-models/lag-llama"
+
+
+[tool.setuptools.dynamic]
+dependencies = {file = "requirements.txt"}
+version = {file = "VERSION"}
+
+[tool.setuptools]
+package-data = {"data" = ["data/*"], "configs" = ["configs/*"]}
+
+[tool.setuptools.packages.find]
