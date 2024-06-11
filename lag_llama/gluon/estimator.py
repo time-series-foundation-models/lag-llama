@@ -98,6 +98,10 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         Controls the sampling of windows during training.
     validation_sampler
         Controls the sampling of windows during validation.
+    use_single_pass_sampling
+        If True, use a single forward pass and sample N times from the saved distribution, much more efficient.
+        If False, perform N forward passes and maintain N parallel prediction paths, this is true probalistic forecasting.
+            (default: False)
     """
 
     @validated()
@@ -155,6 +159,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         track_loss_per_series: bool = False,
         ckpt_path: Optional[str] = None,
         nonnegative_pred_samples: bool = False,
+        use_single_pass_sampling: bool = False,
         device: torch.device = torch.device("cuda")
     ) -> None:
         default_trainer_kwargs = {"max_epochs": 100}
@@ -199,6 +204,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         self.batch_size = batch_size
         self.num_batches_per_epoch = num_batches_per_epoch
         self.nonnegative_pred_samples = nonnegative_pred_samples
+        self.use_single_pass_sampling = use_single_pass_sampling
 
         self.train_sampler = train_sampler or ExpectedNumInstanceSampler(
             num_instances=1.0,
