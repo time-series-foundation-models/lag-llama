@@ -102,6 +102,7 @@ class LagLlamaLightningModule(LightningModule):
         track_loss_per_series: bool = False,
         nonnegative_pred_samples: bool = False,
         use_kv_cache: bool = True,
+        use_single_pass_sampling: bool = False,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -147,6 +148,7 @@ class LagLlamaLightningModule(LightningModule):
         self.train_loss_dict_per_series = {}
         self.val_loss_dict_per_series = {}
         self.use_kv_cache = use_kv_cache
+        self.use_single_pass_sampling = use_single_pass_sampling
         self.transforms = []
         aug_probs = dict(
             Jitter=dict(prob=self.jitter_prob, sigma=self.jitter_sigma),
@@ -224,54 +226,92 @@ class LagLlamaLightningModule(LightningModule):
         if self.time_feat:
             past_time_feat = kwargs["past_time_feat"]
             future_time_feat = kwargs["future_time_feat"]
-            repeated_past_time_feat = past_time_feat.repeat_interleave(
-                self.model.num_parallel_samples, 0
-            )
-            repeated_future_time_feat = future_time_feat.repeat_interleave(
-                self.model.num_parallel_samples, 0
-            )
 
-        repeated_past_target = past_target.repeat_interleave(
-            self.model.num_parallel_samples, 0
-        )  # (bsz* self.model.num_parallel_samples, model.context_length+max(model.lags_seq))
-        repeated_past_observed_values = past_observed_values.repeat_interleave(
-            self.model.num_parallel_samples, 0
-        )  # (bsz* self.model.num_parallel_samples, model.context_length+max(model.lags_seq))
+        use_single_pass_sampling = self.use_single_pass_sampling
 
         future_samples = []
-        for t in range(self.prediction_length):
+
+        if use_single_pass_sampling:
+            # Single-pass sampling mode: Single forward pass per step, save distribution parameters, sample `num_parallel_samples` times, add mean to context.
+            for t in range(self.prediction_length):
+                params, loc, scale = self.model(
+                    *args,
+                    past_time_feat=past_time_feat if self.time_feat else None,
+                    future_time_feat=future_time_feat[..., : t + 1, :] if self.time_feat else None,
+                    past_target=past_target,
+                    past_observed_values=past_observed_values,
+                    use_kv_cache=self.use_kv_cache,
+                )
+
+                sliced_params = [
+                    p[:, -1:] for p in params
+                ]  # Take the last timestep predicted. Each tensor is of shape (#bsz, 1)
+                # Singular distribution is used for getting the greedy prediction (mean)
+                distr = self.model.distr_output.distribution(sliced_params, loc, scale)
+                greedy_prediction = distr.mean # (#bsz, 1)
+
+                repeated_sliced_params = [
+                        p[:, -1:].repeat_interleave(
+                        self.model.num_parallel_samples, 0
+                    ) for p in params
+                ] # Take the last timestep predicted and repeat for number of samples. Each tensor is of shape (#bsz*#parallel_samples, 1)
+                repeated_loc = loc.repeat_interleave(
+                        self.model.num_parallel_samples, 0
+                    )
+                repeated_scale = scale.repeat_interleave(
+                        self.model.num_parallel_samples, 0
+                    )
+                # Repeated distribution is used for getting the parallel samples
+                # (distr.sample([self.model.num_parallel_samples]) seems to give terrible results)
+                repeated_distr = self.model.distr_output.distribution(repeated_sliced_params, repeated_loc, repeated_scale)
+                sample = repeated_distr.sample()  # (#bsz*#parallel_samples, 1)
+                if self.nonnegative_pred_samples:
+                    sample = F.relu(sample)
+                future_samples.append(sample)
+
+                past_target = torch.cat((past_target, greedy_prediction), dim=1)
+                past_observed_values = torch.cat(
+                    (past_observed_values, torch.ones_like(greedy_prediction)), dim=1
+                )
+        else:
+            # Original probabilistic forecasting: Duplicate input, `num_parallel_samples` forward passes per step, sample each distribution once, add samples to context.
+            repeated_past_target = past_target.repeat_interleave(self.model.num_parallel_samples, 0)
+            repeated_past_observed_values = past_observed_values.repeat_interleave(self.model.num_parallel_samples, 0)
             if self.time_feat:
-                params, loc, scale = self.model(
-                    *args,
-                    past_time_feat=repeated_past_time_feat,
-                    future_time_feat=repeated_future_time_feat[..., : t + 1, :],
-                    past_target=repeated_past_target,
-                    past_observed_values=repeated_past_observed_values,
-                    use_kv_cache=self.use_kv_cache,
-                )
-            else:
-                params, loc, scale = self.model(
-                    *args,
-                    past_time_feat=None,  # repeated_past_time_feat,
-                    future_time_feat=None,  # repeated_future_time_feat[..., : t + 1, :],
-                    past_target=repeated_past_target,
-                    past_observed_values=repeated_past_observed_values,
-                    use_kv_cache=self.use_kv_cache,
-                )
+                repeated_past_time_feat = past_time_feat.repeat_interleave(self.model.num_parallel_samples, 0)
+                repeated_future_time_feat = future_time_feat.repeat_interleave(self.model.num_parallel_samples, 0)
 
-            sliced_params = [
-                p[:, -1:] for p in params
-            ]  # Take the last timestep predicted. Each tensor is of shape (#bsz*#parallel_samples, 1)
-            distr = self.model.distr_output.distribution(sliced_params, loc, scale)
-            sample = distr.sample()  # (#bsz*#parallel_samples, 1)
-            if self.nonnegative_pred_samples:
-                sample = F.relu(sample)
-            future_samples.append(sample)
+            for t in range(self.prediction_length):
+                if self.time_feat:
+                    params, loc, scale = self.model(
+                        *args,
+                        past_time_feat=repeated_past_time_feat,
+                        future_time_feat=repeated_future_time_feat[..., : t + 1, :],
+                        past_target=repeated_past_target,
+                        past_observed_values=repeated_past_observed_values,
+                        use_kv_cache=self.use_kv_cache,
+                    )
+                else:
+                    params, loc, scale = self.model(
+                        *args,
+                        past_time_feat=None,
+                        future_time_feat=None,
+                        past_target=repeated_past_target,
+                        past_observed_values=repeated_past_observed_values,
+                        use_kv_cache=self.use_kv_cache,
+                    )
 
-            repeated_past_target = torch.cat((repeated_past_target, sample), dim=1)
-            repeated_past_observed_values = torch.cat(
-                (repeated_past_observed_values, torch.ones_like(sample)), dim=1
-            )
+                sliced_params = [p[:, -1:] for p in params]
+                distr = self.model.distr_output.distribution(sliced_params, loc, scale)
+                sample = distr.sample()
+                if self.nonnegative_pred_samples:
+                    sample = F.relu(sample)
+                future_samples.append(sample)
+
+                repeated_past_target = torch.cat((repeated_past_target, sample), dim=1)
+                repeated_past_observed_values = torch.cat(
+                    (repeated_past_observed_values, torch.ones_like(sample)), dim=1
+                )
 
         self.model.reset_cache()
 
@@ -280,6 +320,7 @@ class LagLlamaLightningModule(LightningModule):
             (-1, self.model.num_parallel_samples, self.prediction_length)
             + self.model.distr_output.event_shape,
         )
+
 
     # train
     def _compute_loss(self, batch, do_not_average=False, return_observed_values=False):
