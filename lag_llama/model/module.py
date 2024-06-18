@@ -282,6 +282,7 @@ class CausalSelfAttention(nn.Module):
 
     def forward(self, x: torch.Tensor, use_kv_cache: bool) -> torch.Tensor:
         # batch size, sequence length, embedding dimensionality (n_embd)
+        # sequence length will be 1 when using kv_cache and kv_cache has been initialised
         (B, T, C) = x.size()
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
@@ -309,9 +310,23 @@ class CausalSelfAttention(nn.Module):
             1, 2
         )  # (B, nh, T, hs)
 
+        # This the true sequence length after concatenation with kv_cache,
+        # will be the same as `T` when kv_cache is not in use
+        true_seq_len = k.size(2)
         if self.rotary_emb is not None:
-            cos, sin = self.rotary_emb(device=v.device, dtype=v.dtype, seq_len=T)
-            q, k = apply_rotary_pos_emb(q, k, cos, sin, position_ids=None)
+            if use_kv_cache and T < true_seq_len:
+                # When kv_cache is in use and we're working with only the last token (T = 1 instead of full sequence length `true_seq_len``)
+                # Use the full sequence length for positional embeddings (true_seq_len)
+                # q is the query vector for the last token, so it's position is the last index (-1)
+                cos, sin = self.rotary_emb(device=v.device, dtype=v.dtype, seq_len=true_seq_len)
+                q, _ = apply_rotary_pos_emb(q, k, cos, sin, position_ids=[-1])
+                
+                # k is the key matrix after concatenation with cache, so no position_ids
+                cos, sin = self.rotary_emb(device=v.device, dtype=v.dtype, seq_len=true_seq_len)
+                _, k = apply_rotary_pos_emb(q, k, cos, sin, position_ids=None)
+            else:
+                cos, sin = self.rotary_emb(device=v.device, dtype=v.dtype, seq_len=T)
+                q, k = apply_rotary_pos_emb(q, k, cos, sin, position_ids=None)
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         #  att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
