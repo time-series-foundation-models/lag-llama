@@ -337,14 +337,20 @@ class CausalSelfAttention(nn.Module):
         # efficient attention using Flash Attention CUDA kernels
         # When using kv cache at inference, is_causal=False since decoder is causal, at each generation step we want
         # to avoid recalculating the same previous token attention
-        if use_kv_cache:
-            y = F.scaled_dot_product_attention(
-                q, k, v, attn_mask=None, dropout_p=self.dropout, is_causal=False
-            )
-        else:
-            y = F.scaled_dot_product_attention(
-                q, k, v, attn_mask=None, dropout_p=self.dropout, is_causal=True
-            )
+
+        # Generate the mask
+        mask = torch.nn.Transformer.generate_square_subsequent_mask(sz=T, device=v.device)
+
+        # Since generate_square_subsequent_mask gives you a (seq_length, seq_length) mask,
+        # You need to adjust the mask to fit the dimensions expected by the attention function:
+        # Normally, shape is (batch_size, num_heads, seq_length, seq_length)
+        # When using kv_cache, shape is (batch_size, num_heads, 1, seq_length)
+        mask = mask.unsqueeze(0).unsqueeze(0)  # Add dimensions for batch and head
+        mask = mask.expand(B, self.n_head, T, true_seq_len)  # Expand to cover all batches and heads
+
+        y = F.scaled_dot_product_attention(
+            q, k, v, attn_mask=mask, dropout_p=self.dropout
+        )
 
         # re-assemble all head outputs side by side
         y = y.transpose(1, 2).contiguous().view(B, T, C)
