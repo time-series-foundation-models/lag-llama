@@ -570,6 +570,6 @@ class LagLlamaModel(nn.Module):
         Resets all cached key-values in attention.
         Has to be called after prediction loop in predictor
         """
+        self.y_cache = False
         for block in self.transformer.h:
-            block.y_cache = None
             block.attn.kv_cache = None
