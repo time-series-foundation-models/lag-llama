@@ -282,15 +282,17 @@ class CausalSelfAttention(nn.Module):
 
     def forward(self, x: torch.Tensor, use_kv_cache: bool) -> torch.Tensor:
         # batch size, sequence length, embedding dimensionality (n_embd)
+        # sequence length will be 1 when using kv_cache and kv_cache has been initialised
         (B, T, C) = x.size()
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
         q = self.q_proj(x)
         k, v = self.kv_proj(x).split(self.n_embd_per_head * self.n_head, dim=2)
 
+        cache_initialized = self.kv_cache is not None
         if use_kv_cache:
             # Optimized for single next prediction
-            if self.kv_cache is not None:
+            if cache_initialized:
                 # Update cache
                 k = torch.cat([self.kv_cache[0], k], dim=1)[:, 1:]
                 v = torch.cat([self.kv_cache[1], v], dim=1)[:, 1:]
@@ -309,9 +311,23 @@ class CausalSelfAttention(nn.Module):
             1, 2
         )  # (B, nh, T, hs)
 
+        # This the true sequence length after concatenation with kv_cache,
+        # will be the same as `T` when kv_cache is not in use
+        true_seq_len = k.size(2)
         if self.rotary_emb is not None:
-            cos, sin = self.rotary_emb(device=v.device, dtype=v.dtype, seq_len=T)
-            q, k = apply_rotary_pos_emb(q, k, cos, sin, position_ids=None)
+            if use_kv_cache and cache_initialized:
+                # When kv_cache is in use and we're working with only the last token (T = 1 instead of full sequence length `true_seq_len``)
+                # Use the full sequence length for positional embeddings (true_seq_len)
+                # q is the query vector for the last token, so it's position is the last index (-1)
+                cos, sin = self.rotary_emb(device=v.device, dtype=v.dtype, seq_len=true_seq_len)
+                q, _ = apply_rotary_pos_emb(q, k, cos, sin, position_ids=[-1])
+                
+                # k is the key matrix after concatenation with cache, so no position_ids
+                cos, sin = self.rotary_emb(device=v.device, dtype=v.dtype, seq_len=true_seq_len)
+                _, k = apply_rotary_pos_emb(q, k, cos, sin, position_ids=None)
+            else:
+                cos, sin = self.rotary_emb(device=v.device, dtype=v.dtype, seq_len=T)
+                q, k = apply_rotary_pos_emb(q, k, cos, sin, position_ids=None)
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         #  att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
@@ -322,7 +338,8 @@ class CausalSelfAttention(nn.Module):
         # efficient attention using Flash Attention CUDA kernels
         # When using kv cache at inference, is_causal=False since decoder is causal, at each generation step we want
         # to avoid recalculating the same previous token attention
-        if use_kv_cache:
+
+        if use_kv_cache and cache_initialized:
             y = F.scaled_dot_product_attention(
                 q, k, v, attn_mask=None, dropout_p=self.dropout, is_causal=False
             )
@@ -570,6 +587,6 @@ class LagLlamaModel(nn.Module):
         Resets all cached key-values in attention.
         Has to be called after prediction loop in predictor
         """
+        self.y_cache = False
         for block in self.transformer.h:
-            block.y_cache = None
             block.attn.kv_cache = None
