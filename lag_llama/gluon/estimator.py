@@ -160,7 +160,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         ckpt_path: Optional[str] = None,
         nonnegative_pred_samples: bool = False,
         use_single_pass_sampling: bool = False,
-        device: torch.device = torch.device("cuda")
+        device: torch.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     ) -> None:
         default_trainer_kwargs = {"max_epochs": 100}
         if trainer_kwargs is not None:
