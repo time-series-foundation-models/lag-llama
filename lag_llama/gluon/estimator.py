@@ -16,7 +16,9 @@ from typing import Any, Dict, Iterable, Optional
 
 import pytorch_lightning as pl
 import torch
-
+from gluon_utils.gluon_ts_distributions.implicit_quantile_network import (
+    ImplicitQuantileNetworkOutput,
+)
 from gluonts.core.component import validated
 from gluonts.dataset.common import Dataset
 from gluonts.dataset.field_names import FieldName
@@ -27,10 +29,9 @@ from gluonts.time_feature import (
     get_lags_for_frequency,
     time_features_from_frequency_str,
 )
-from gluonts.torch.distributions import StudentTOutput, NegativeBinomialOutput
+from gluonts.torch.distributions import NegativeBinomialOutput, StudentTOutput
 from gluonts.torch.model.estimator import PyTorchLightningEstimator
 from gluonts.torch.model.predictor import PyTorchPredictor
-from gluonts.torch.modules.loss import DistributionLoss, NegativeLogLikelihood
 from gluonts.transform import (
     AddObservedValuesIndicator,
     AddTimeFeatures,
@@ -44,9 +45,6 @@ from gluonts.transform import (
     ValidationSplitSampler,
 )
 
-from gluon_utils.gluon_ts_distributions.implicit_quantile_network import (
-    ImplicitQuantileNetworkOutput,
-)
 from lag_llama.gluon.lightning_module import LagLlamaLightningModule
 
 PREDICTION_INPUT_NAMES = [
@@ -82,9 +80,6 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
     distr_output
         Distribution to use to evaluate observations and sample predictions
         (default: StudentTOutput()).
-    loss
-        Loss to be optimized during training
-        (default: ``NegativeLogLikelihood()``).
     batch_norm
         Whether to apply batch normalization.
     batch_size
@@ -143,7 +138,6 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         window_warp_scales: list = [0.5, 2.0],
         # Continuning model arguments
         distr_output: str = "studentT",
-        loss: DistributionLoss = NegativeLogLikelihood(),
         num_parallel_samples: int = 100,
         batch_size: int = 32,
         num_batches_per_epoch: int = 50,
@@ -160,7 +154,9 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         ckpt_path: Optional[str] = None,
         nonnegative_pred_samples: bool = False,
         use_single_pass_sampling: bool = False,
-        device: torch.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        device: torch.device = torch.device("cuda")
+        if torch.cuda.is_available()
+        else torch.device("cpu"),
     ) -> None:
         default_trainer_kwargs = {"max_epochs": 100}
         if trainer_kwargs is not None:
@@ -200,7 +196,6 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
             distr_output = ImplicitQuantileNetworkOutput()
         self.distr_output = distr_output
         self.num_parallel_samples = num_parallel_samples
-        self.loss = loss
         self.batch_size = batch_size
         self.num_batches_per_epoch = num_batches_per_epoch
         self.nonnegative_pred_samples = nonnegative_pred_samples

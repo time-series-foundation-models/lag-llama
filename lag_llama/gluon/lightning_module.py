@@ -15,18 +15,8 @@
 import random
 
 import numpy as np
-
-from lightning import LightningModule
 import torch
 import torch.nn.functional as F
-
-from gluonts.core.component import validated
-from gluonts.itertools import prod
-from gluonts.torch.modules.loss import DistributionLoss, NegativeLogLikelihood
-from gluonts.torch.util import repeat_along_dim, take_last
-
-from data.augmentations.freq_mask import freq_mask
-from data.augmentations.freq_mix import freq_mix
 from data.augmentations.augmentations import (
     ApplyAugmentations,
     Jitter,
@@ -38,9 +28,15 @@ from data.augmentations.augmentations import (
     WindowSlice,
     WindowWarp,
 )
-from gluon_utils.gluon_ts_distributions.implicit_quantile_network import (
-    ImplicitQuantileNetworkOutput,
-)
+from data.augmentations.freq_mask import freq_mask
+from data.augmentations.freq_mix import freq_mix
+from gluonts.core.component import validated
+from gluonts.itertools import prod
+
+# from gluonts.torch.modules.loss import DistributionLoss, NegativeLogLikelihood
+from gluonts.torch.util import repeat_along_dim, take_last
+from lightning import LightningModule
+
 from lag_llama.model.module import LagLlamaModel
 
 
@@ -71,7 +67,6 @@ class LagLlamaLightningModule(LightningModule):
         model_kwargs: dict,
         context_length: int,
         prediction_length: int,
-        loss: DistributionLoss = NegativeLogLikelihood(),
         lr: float = 1e-3,
         weight_decay: float = 1e-8,
         aug_prob: float = 0.1,
@@ -109,7 +104,6 @@ class LagLlamaLightningModule(LightningModule):
         self.context_length = self.hparams.context_length
         self.prediction_length = self.hparams.prediction_length
         self.model = LagLlamaModel(**self.hparams.model_kwargs)
-        self.loss = self.hparams.loss
         self.lr = self.hparams.lr
         self.weight_decay = self.hparams.weight_decay
         self.aug_prob = self.hparams.aug_prob
@@ -237,33 +231,34 @@ class LagLlamaLightningModule(LightningModule):
                 params, loc, scale = self.model(
                     *args,
                     past_time_feat=past_time_feat if self.time_feat else None,
-                    future_time_feat=future_time_feat[..., : t + 1, :] if self.time_feat else None,
+                    future_time_feat=future_time_feat[..., : t + 1, :]
+                    if self.time_feat
+                    else None,
                     past_target=past_target,
                     past_observed_values=past_observed_values,
                     use_kv_cache=self.use_kv_cache,
                 )
 
-                sliced_params = [
-                    p[:, -1:] for p in params
-                ]  # Take the last timestep predicted. Each tensor is of shape (#bsz, 1)
+                # Take the last timestep predicted. Each tensor is of shape (#bsz, 1)
+                sliced_params = [p[:, -1:] for p in params]
                 # Singular distribution is used for getting the greedy prediction (mean)
                 distr = self.model.distr_output.distribution(sliced_params, loc, scale)
-                greedy_prediction = distr.mean # (#bsz, 1)
+                greedy_prediction = distr.mean  # (#bsz, 1)
 
+                # Take the last timestep predicted and repeat for number of samples. Each tensor is of shape (#bsz*#parallel_samples, 1)
                 repeated_sliced_params = [
-                        p[:, -1:].repeat_interleave(
-                        self.model.num_parallel_samples, 0
-                    ) for p in params
-                ] # Take the last timestep predicted and repeat for number of samples. Each tensor is of shape (#bsz*#parallel_samples, 1)
-                repeated_loc = loc.repeat_interleave(
-                        self.model.num_parallel_samples, 0
-                    )
+                    p[:, -1:].repeat_interleave(self.model.num_parallel_samples, 0)
+                    for p in params
+                ]
+                repeated_loc = loc.repeat_interleave(self.model.num_parallel_samples, 0)
                 repeated_scale = scale.repeat_interleave(
-                        self.model.num_parallel_samples, 0
-                    )
+                    self.model.num_parallel_samples, 0
+                )
                 # Repeated distribution is used for getting the parallel samples
                 # (distr.sample([self.model.num_parallel_samples]) seems to give terrible results)
-                repeated_distr = self.model.distr_output.distribution(repeated_sliced_params, repeated_loc, repeated_scale)
+                repeated_distr = self.model.distr_output.distribution(
+                    repeated_sliced_params, repeated_loc, repeated_scale
+                )
                 sample = repeated_distr.sample()  # (#bsz*#parallel_samples, 1)
                 if self.nonnegative_pred_samples:
                     sample = F.relu(sample)
@@ -275,11 +270,19 @@ class LagLlamaLightningModule(LightningModule):
                 )
         else:
             # Original probabilistic forecasting: Duplicate input, `num_parallel_samples` forward passes per step, sample each distribution once, add samples to context.
-            repeated_past_target = past_target.repeat_interleave(self.model.num_parallel_samples, 0)
-            repeated_past_observed_values = past_observed_values.repeat_interleave(self.model.num_parallel_samples, 0)
+            repeated_past_target = past_target.repeat_interleave(
+                self.model.num_parallel_samples, 0
+            )
+            repeated_past_observed_values = past_observed_values.repeat_interleave(
+                self.model.num_parallel_samples, 0
+            )
             if self.time_feat:
-                repeated_past_time_feat = past_time_feat.repeat_interleave(self.model.num_parallel_samples, 0)
-                repeated_future_time_feat = future_time_feat.repeat_interleave(self.model.num_parallel_samples, 0)
+                repeated_past_time_feat = past_time_feat.repeat_interleave(
+                    self.model.num_parallel_samples, 0
+                )
+                repeated_future_time_feat = future_time_feat.repeat_interleave(
+                    self.model.num_parallel_samples, 0
+                )
 
             for t in range(self.prediction_length):
                 if self.time_feat:
@@ -321,9 +324,14 @@ class LagLlamaLightningModule(LightningModule):
             + self.model.distr_output.event_shape,
         )
 
-
     # train
-    def _compute_loss(self, batch, do_not_average=False, return_observed_values=False):
+    def _compute_loss(
+        self,
+        batch,
+        do_not_average=False,
+        return_observed_values=False,
+        aggregate_by=torch.mean,
+    ):
         past_target = batch[
             "past_target"
         ]  # (bsz, model.context_length+max(model.lags_seq))
@@ -382,27 +390,13 @@ class LagLlamaLightningModule(LightningModule):
             (context_observed, future_observed_reshaped), dim=1
         )  # same as target but for observed_values tensor
 
-        if type(self.model.distr_output) == ImplicitQuantileNetworkOutput:
-            if not do_not_average:
-                loss = (
-                    self.model.distr_output.loss(target, distr_args, loc, scale)
-                    * observed_values
-                ).sum() / observed_values.sum().clamp_min(1.0)
-            else:
-                loss = (
-                    self.model.distr_output.loss(target, distr_args, loc, scale)
-                    * observed_values
-                )
-        else:
-            distr = self.model.distr_output.distribution(
-                distr_args, loc=loc, scale=scale
-            )  # an object representing a distribution with the specified parameters. We need this to compute the NLL loss.
-            if not do_not_average:
-                loss = (
-                    self.loss(distr, target) * observed_values
-                ).sum() / observed_values.sum().clamp_min(1.0)
-            else:
-                loss = self.loss(distr, target) * observed_values
+        loss_values = self.model.distr_output.loss(target, distr_args, loc, scale)
+        loss_values = loss_values * observed_values.clamp_min(1)
+
+        loss = aggregate_by(
+            loss_values,
+            dim=tuple(range(extra_dims + 1, len(future_target.shape))),
+        )
 
         if not return_observed_values:
             return loss
@@ -433,13 +427,10 @@ class LagLlamaLightningModule(LightningModule):
                     batch["past_target"], batch["future_target"]
                 )
 
-        train_loss_per_sample, observed_values = self._compute_loss(
-            batch, do_not_average=True, return_observed_values=True
+        train_loss_avg, observed_values = self._compute_loss(
+            batch, return_observed_values=True
         )
 
-        train_loss_avg = train_loss_per_sample.sum() / observed_values.sum().clamp_min(
-            1.0
-        )
         self.log(
             "train_loss", train_loss_avg, on_epoch=True, on_step=False, prog_bar=False
         )
@@ -477,11 +468,10 @@ class LagLlamaLightningModule(LightningModule):
         """
         Execute validation step.
         """
-        val_loss_per_sample, observed_values = self._compute_loss(
-            batch, do_not_average=True, return_observed_values=True
+        val_loss_avg, observed_values = self._compute_loss(
+            batch, return_observed_values=True
         )
 
-        val_loss_avg = val_loss_per_sample.sum() / observed_values.sum().clamp_min(1.0)
         self.log("val_loss", val_loss_avg, on_epoch=True, on_step=False, prog_bar=False)
         return val_loss_avg
 
