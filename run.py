@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import argparse
 import gc
 import json
 import os
@@ -22,6 +21,8 @@ from hashlib import sha1
 import lightning
 import torch
 import wandb
+from jsonargparse import ArgumentParser, ActionConfigFile
+
 from gluonts.evaluation import Evaluator, make_evaluation_predictions
 from gluonts.evaluation._base import aggregate_valid
 from gluonts.transform import ExpectedNumInstanceSampler
@@ -41,7 +42,7 @@ from data.data_utils import (
 )
 from data.dataset_list import ALL_DATASETS
 from lag_llama.gluon.estimator import LagLlamaEstimator
-from utils.utils import plot_forecasts, set_seed
+from helpers.utils import plot_forecasts, set_seed
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 warnings.simplefilter(action="ignore", category=UserWarning)
@@ -366,9 +367,9 @@ def train(args):
                     val_dataset,
                     total_train_points,
                     total_val_points,
-                    total_val_windows,
-                    max_train_end_date,
-                    total_points,
+                    _,
+                    _,
+                    _,
                 ) = create_train_and_val_datasets_with_dates(
                     name,
                     args.dataset_path,
@@ -429,9 +430,9 @@ def train(args):
                 val_data,
                 total_train_points,
                 total_val_points,
-                total_val_windows,
-                max_train_end_date,
-                total_points,
+                _,
+                _,
+                _,
             ) = create_train_and_val_datasets_with_dates(
                 args.single_dataset,
                 args.dataset_path,
@@ -602,7 +603,7 @@ def train(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = ArgumentParser()
 
     # Experiment args
     parser.add_argument("-e", "--experiment_name", type=str, required=True)
@@ -867,7 +868,7 @@ if __name__ == "__main__":
     parser.add_argument("--weight_decay", type=float, default=1e-8)
 
     # Override arguments with a dictionary file with args
-    parser.add_argument("--args_from_dict_path", type=str)
+    parser.add_argument('--cfg', action=ActionConfigFile)
 
     # Evaluation utils
     parser.add_argument("--eval_prefix", type=str)
@@ -894,12 +895,6 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-
-    if args.args_from_dict_path:
-        with open(args.args_from_dict_path, "r") as read_file:
-            loaded_args = json.load(read_file)
-        for key, value in loaded_args.items():
-            setattr(args, key, value)
 
     # print args for logging
     for arg in vars(args):
