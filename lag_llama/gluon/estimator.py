@@ -16,9 +16,7 @@ from typing import Any, Dict, Iterable, Optional
 
 import pytorch_lightning as pl
 import torch
-from gluon_utils.gluon_ts_distributions.implicit_quantile_network import (
-    ImplicitQuantileNetworkOutput,
-)
+
 from gluonts.core.component import validated
 from gluonts.dataset.common import Dataset
 from gluonts.dataset.field_names import FieldName
@@ -29,7 +27,7 @@ from gluonts.time_feature import (
     get_lags_for_frequency,
     time_features_from_frequency_str,
 )
-from gluonts.torch.distributions import NegativeBinomialOutput, StudentTOutput
+from gluonts.torch.distributions import NegativeBinomialOutput, StudentTOutput, ImplicitQuantileNetworkOutput
 from gluonts.torch.model.estimator import PyTorchLightningEstimator
 from gluonts.torch.model.predictor import PyTorchPredictor
 from gluonts.transform import (
