@@ -27,7 +27,11 @@ from gluonts.time_feature import (
     get_lags_for_frequency,
     time_features_from_frequency_str,
 )
-from gluonts.torch.distributions import NegativeBinomialOutput, StudentTOutput, ImplicitQuantileNetworkOutput
+from gluonts.torch.distributions import (
+    NegativeBinomialOutput,
+    StudentTOutput,
+    ImplicitQuantileNetworkOutput,
+)
 from gluonts.torch.model.estimator import PyTorchLightningEstimator
 from gluonts.torch.model.predictor import PyTorchPredictor
 from gluonts.transform import (
