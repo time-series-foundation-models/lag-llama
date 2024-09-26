@@ -1,6 +1,6 @@
 # This script can only be executed once you have trained a model. The experiment name used for the trained model should be specified in line 4
 
-CONFIGPATH="configs/lag_llama.json"
+CONFIGPATH="configs/lag_llama.yaml"
 PRETRAINING_EXP_NAME="pretraining_lag_llama"
 PERCENTAGE=100 # Change to lesser value to limit the history. Use 20, 40, 60, 80 to reproduce experiments in the paper.
 
