@@ -18,11 +18,10 @@ import os
 import warnings
 from hashlib import sha1
 
-import lightning
-from lightning.pytorch.loggers import MLFlowLogger
 import torch
+import lightning
+from lightning.pytorch.loggers import TensorBoardLogger
 from jsonargparse import ArgumentParser, ActionConfigFile
-import mlflow
 
 from gluonts.evaluation import Evaluator, make_evaluation_predictions
 from gluonts.evaluation._base import aggregate_valid
@@ -154,21 +153,15 @@ def train(args):
         experiment_name = args.eval_prefix + "_" + experiment_name
     full_experiment_name = experiment_name + "-seed-" + str(args.seed)
 
-    # Set up MLflow
-    mlflow.set_tracking_uri(args.mlflow_tracking_uri)
-    mlflow.set_experiment(experiment_name)
-
-    # Start MLflow run
-    with mlflow.start_run(run_name=full_experiment_name, tags=args.mlflow_tags) as run:
-        # Log parameters
-        mlflow.log_params(vars(args))
-
-        # Set up MLflowLogger for Lightning
-        logger = MLFlowLogger(
-            experiment_name=experiment_name,
-            tracking_uri=args.mlflow_tracking_uri,
-            run_id=run.info.run_id,
-        )
+    # Set up TensorBoardLogger
+    logger = TensorBoardLogger(
+        save_dir=args.results_dir,
+        name=full_experiment_name,
+        version=str(args.seed),
+        default_hp_metric=False,
+    )
+    # Log hyperparameters
+    logger.log_hyperparams(vars(args))
 
     # Callbacks
     swa_callbacks = StochasticWeightAveraging(
@@ -310,7 +303,7 @@ def train(args):
         num_parameters_savefile.write(str(num_parameters))
 
     # Log num_parameters
-    mlflow.log_metric("num_parameters", num_parameters)
+    logger.experiment.add_scalar("num_parameters", num_parameters, 0)
 
     # Create samplers
     # Here we make a window slightly bigger so that instance sampler can sample from each window
@@ -510,7 +503,7 @@ def train(args):
                 batch_size //= 2
             estimator.batch_size = batch_size
             print("\nUsing a batch size of", batch_size, "\n")
-            mlflow.log_param("batch_size", batch_size)
+            logger.log_hyperparams({"batch_size": batch_size})
 
         # Train
         train_output = estimator.train_model(
@@ -583,7 +576,7 @@ def train(args):
         if args.plot_test_forecasts:
             print("Plotting forecasts")
             figure = plot_forecasts(forecasts, tss, prediction_length)
-            mlflow.log_figure(figure, f"Forecast_plot_of_{name}.png")
+            logger.experiment.add_figure(f"Forecast_plot_of_{name}", figure, 0)
 
         # Get metrics
         evaluator = Evaluator(
@@ -598,11 +591,9 @@ def train(args):
             json.dump(agg_metrics, metrics_savefile)
 
         # Log metrics. For now only CRPS is logged.
-        mlflow_metrics = {}
-        mlflow_metrics["test/" + name + "/" + "CRPS"] = agg_metrics[
-            "mean_wQuantileLoss"
-        ]
-        mlflow.log_metrics(mlflow_metrics)
+        logger.experiment.add_scalar(
+            f"test/{name}/CRPS", agg_metrics["mean_wQuantileLoss"], 0
+        )
 
 
 if __name__ == "__main__":
@@ -821,10 +812,6 @@ if __name__ == "__main__":
 
     # Directory to save everything in
     parser.add_argument("-r", "--results_dir", type=str, required=True)
-
-    # MLflow
-    parser.add_argument("--mlflow_tracking_uri", type=str, required=True)
-    parser.add_argument("--mlflow_tags", nargs="+")
 
     # Other arguments
     parser.add_argument(

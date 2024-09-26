@@ -8,3 +8,4 @@ huggingface_hub[cli]
 matplotlib
 datasets
 jsonargparse
+tensorboard
