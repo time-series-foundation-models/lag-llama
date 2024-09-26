@@ -19,9 +19,10 @@ import warnings
 from hashlib import sha1
 
 import lightning
+from lightning.pytorch.loggers import MLFlowLogger
 import torch
-import wandb
 from jsonargparse import ArgumentParser, ActionConfigFile
+import mlflow
 
 from gluonts.evaluation import Evaluator, make_evaluation_predictions
 from gluonts.evaluation._base import aggregate_valid
@@ -32,7 +33,6 @@ from lightning.pytorch.callbacks import (
     ModelCheckpoint,
     StochasticWeightAveraging,
 )
-from lightning.pytorch.loggers import WandbLogger
 
 from data.data_utils import (
     CombinedDataset,
@@ -148,25 +148,27 @@ def train(args):
     else:
         print("No checkpoints found. Training from scratch.")
 
-    # W&B logging
+    # MLflow logging
     # NOTE: Caution when using `full_experiment_name` after this
     if args.eval_prefix and (args.evaluate_only):
         experiment_name = args.eval_prefix + "_" + experiment_name
     full_experiment_name = experiment_name + "-seed-" + str(args.seed)
-    experiment_id = sha1(full_experiment_name.encode("utf-8")).hexdigest()[:8]
-    logger = WandbLogger(
-        name=full_experiment_name,
-        save_dir=fulldir_experiments,
-        group=experiment_name,
-        tags=args.wandb_tags,
-        entity=args.wandb_entity,
-        project=args.wandb_project,
-        allow_val_change=True,
-        config=vars(args),
-        id=experiment_id,
-        mode=args.wandb_mode,
-        settings=wandb.Settings(code_dir="."),
-    )
+
+    # Set up MLflow
+    mlflow.set_tracking_uri(args.mlflow_tracking_uri)
+    mlflow.set_experiment(experiment_name)
+
+    # Start MLflow run
+    with mlflow.start_run(run_name=full_experiment_name, tags=args.mlflow_tags) as run:
+        # Log parameters
+        mlflow.log_params(vars(args))
+
+        # Set up MLflowLogger for Lightning
+        logger = MLFlowLogger(
+            experiment_name=experiment_name,
+            tracking_uri=args.mlflow_tracking_uri,
+            run_id=run.info.run_id,
+        )
 
     # Callbacks
     swa_callbacks = StochasticWeightAveraging(
@@ -306,8 +308,9 @@ def train(args):
     num_parameters_path = fulldir_experiments + "/num_parameters.txt"
     with open(num_parameters_path, "w") as num_parameters_savefile:
         num_parameters_savefile.write(str(num_parameters))
+
     # Log num_parameters
-    logger.log_metrics({"num_parameters": num_parameters})
+    mlflow.log_metric("num_parameters", num_parameters)
 
     # Create samplers
     # Here we make a window slightly bigger so that instance sampler can sample from each window
@@ -507,7 +510,7 @@ def train(args):
                 batch_size //= 2
             estimator.batch_size = batch_size
             print("\nUsing a batch size of", batch_size, "\n")
-            wandb.config.update({"batch_size": batch_size}, allow_val_change=True)
+            mlflow.log_param("batch_size", batch_size)
 
         # Train
         train_output = estimator.train_model(
@@ -580,7 +583,7 @@ def train(args):
         if args.plot_test_forecasts:
             print("Plotting forecasts")
             figure = plot_forecasts(forecasts, tss, prediction_length)
-            wandb.log({f"Forecast plot of {name}": wandb.Image(figure)})
+            mlflow.log_figure(figure, f"Forecast_plot_of_{name}.png")
 
         # Get metrics
         evaluator = Evaluator(
@@ -595,11 +598,11 @@ def train(args):
             json.dump(agg_metrics, metrics_savefile)
 
         # Log metrics. For now only CRPS is logged.
-        wandb_metrics = {}
-        wandb_metrics["test/" + name + "/" + "CRPS"] = agg_metrics["mean_wQuantileLoss"]
-        logger.log_metrics(wandb_metrics)
-
-    wandb.finish()
+        mlflow_metrics = {}
+        mlflow_metrics["test/" + name + "/" + "CRPS"] = agg_metrics[
+            "mean_wQuantileLoss"
+        ]
+        mlflow.log_metrics(mlflow_metrics)
 
 
 if __name__ == "__main__":
@@ -819,13 +822,9 @@ if __name__ == "__main__":
     # Directory to save everything in
     parser.add_argument("-r", "--results_dir", type=str, required=True)
 
-    # W&B
-    parser.add_argument("-w", "--wandb_entity", type=str, default=None)
-    parser.add_argument("--wandb_project", type=str, default="lag-llama-test")
-    parser.add_argument("--wandb_tags", nargs="+")
-    parser.add_argument(
-        "--wandb_mode", type=str, default="online", choices=["offline", "online"]
-    )
+    # MLflow
+    parser.add_argument("--mlflow_tracking_uri", type=str, required=True)
+    parser.add_argument("--mlflow_tags", nargs="+")
 
     # Other arguments
     parser.add_argument(
@@ -868,7 +867,7 @@ if __name__ == "__main__":
     parser.add_argument("--weight_decay", type=float, default=1e-8)
 
     # Override arguments with a dictionary file with args
-    parser.add_argument('--cfg', action=ActionConfigFile)
+    parser.add_argument("--cfg", action=ActionConfigFile)
 
     # Evaluation utils
     parser.add_argument("--eval_prefix", type=str)
