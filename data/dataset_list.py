@@ -41,6 +41,7 @@ ALL_DATASETS = set(
         "beijing_pm25",
         "AirQualityUCI",
         "beijing_multisite",
+        "weather",
     ]
 )
 

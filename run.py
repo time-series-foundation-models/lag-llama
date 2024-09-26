@@ -243,7 +243,7 @@ def train(args):
         n_layer=args.n_layer,
         n_embd_per_head=args.n_embd_per_head,
         n_head=args.n_head,
-        max_context_length=2048,
+        max_context_length=args.max_context_length,
         rope_scaling=None,
         scaling=args.data_normalization,
         lr=args.lr,
@@ -535,7 +535,7 @@ def train(args):
 
     for name in evaluation_datasets:  # [test_dataset]:
         print("Evaluating on", name)
-        test_data, prediction_length, total_points = create_test_dataset(
+        test_data, prediction_length, _ = create_test_dataset(
             name, args.dataset_path, window_size
         )
         print("# of Series in the test data:", len(test_data))
@@ -628,9 +628,9 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42)
 
     # Model hyperparameters
-    parser.add_argument("--context_length", type=int, default=256)
+    parser.add_argument("--context_length", type=int, default=1024)
     parser.add_argument("--prediction_length", type=int, default=1)
-    parser.add_argument("--max_prediction_length", type=int, default=1024)
+    parser.add_argument("--max_context_length", type=int, default=2048)
     parser.add_argument("--n_layer", type=int, default=4)
     parser.add_argument(
         "--num_encoder_layer", type=int, default=4, help="Only for lag-transformer"
@@ -806,7 +806,7 @@ if __name__ == "__main__":
     parser.add_argument("-n", "--num_batches_per_epoch", type=int, default=100)
     parser.add_argument("--limit_val_batches", type=int)
     parser.add_argument("--early_stopping_patience", default=50)
-    parser.add_argument("--dropout", type=float, default=0.0)
+    parser.add_argument("--dropout", type=float, default=0.1)
 
     # Evaluation arguments
     parser.add_argument("--num_parallel_samples", type=int, default=100)
