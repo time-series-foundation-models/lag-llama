@@ -14,6 +14,7 @@
 
 import gc
 import json
+from pathlib import Path
 import os
 import warnings
 from hashlib import sha1
@@ -291,8 +292,15 @@ def train(args):
 
     # Save the args as config to the directory
     config_filepath = fulldir_experiments + "/args.json"
+    def path_to_str(obj):
+        if isinstance(obj, Path):
+            return str(obj)
+        return obj
+
+    # Convert args to a dictionary and handle Path objects
+    args_dict = {k: path_to_str(v) for k, v in vars(args).items()}
     with open(config_filepath, "w") as config_savefile:
-        json.dump(vars(args), config_savefile, indent=4)
+        json.dump(args_dict, config_savefile, indent=4)
 
     # Save the number of parameters to the directory for easy retrieval
     num_parameters = sum(
