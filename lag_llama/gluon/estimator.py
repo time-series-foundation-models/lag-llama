@@ -305,7 +305,6 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
                 checkpoint_path=self.ckpt_path,
                 map_location=self.device,
                 strict=False,
-                loss=self.loss,
                 lr=self.lr,
                 weight_decay=self.weight_decay,
                 context_length=self.context_length,
@@ -343,7 +342,6 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
             )
         else:
             return LagLlamaLightningModule(
-                loss=self.loss,
                 lr=self.lr,
                 weight_decay=self.weight_decay,
                 context_length=self.context_length,
