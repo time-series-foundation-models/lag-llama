@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import gc
 import itertools
 import json
 import os
@@ -344,6 +343,7 @@ class ChronosDataset(IterableDataset, ShuffleMixin):
 
     def __init__(
         self,
+        path: str,
         datasets: list,
         transformation,
         lags_seq,
@@ -363,8 +363,7 @@ class ChronosDataset(IterableDataset, ShuffleMixin):
         assert model_type in ("seq2seq", "causal")
 
         self.datasets = [
-            load_dataset("autogluon/chronos_datasets", dataset, split="train")
-            for dataset in datasets
+            load_dataset(path, dataset, split="train") for dataset in datasets
         ]
         for dataset in self.datasets:
             dataset.set_format("numpy")
@@ -970,7 +969,8 @@ def train(args):
         #         total_val_points,
         #     )
         train_data = ChronosDataset(
-            datasets=CHRONOS_TRAINING_DATASETS[:2],
+            path=args.dataset_path,
+            datasets=CHRONOS_TRAINING_DATASETS,
             probabilities=None,
             transformation=estimator.create_transformation(),
             lags_seq=estimator.lags_seq,
@@ -982,7 +982,8 @@ def train(args):
         ).shuffle(shuffle_buffer_length=args.shuffle_buffer_length)
 
         val_data = ChronosDataset(
-            datasets=CHRONOS_TRAINING_DATASETS[:2],
+            path=args.dataset_path,
+            datasets=CHRONOS_TRAINING_DATASETS,
             probabilities=None,
             transformation=estimator.create_transformation(),
             lags_seq=estimator.lags_seq,
@@ -1162,7 +1163,7 @@ if __name__ == "__main__":
         "-d",
         "--dataset_path",
         type=str,
-        default="datasets",
+        default="autogluon/chronos_datasets",
         help="Enter the datasets folder path here",
     )
     parser.add_argument(
