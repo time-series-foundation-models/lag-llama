@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import requests
-import json
+# import json
+
 
 ALL_DATASETS = set(
     [
@@ -170,17 +171,58 @@ def get_dataset_sizes(datasets="autogluon/chronos_datasets"):
 
 dataset_sizes = get_dataset_sizes()
 
-CHRONOS_TRAINING_DATASET_SIZE = []
+CHRONOS_TRAINING_DATASET_SIZE = [
+    281757285,
+    65546675,
+    1336971,
+    52772258,
+    2556691,
+    103206946,
+    31139117,
+    333563,
+    8780105,
+    597389119,
+    12377357,
+    781873,
+    222678,
+    44967856,
+    1507924920,
+    124515417,
+    2265297,
+    4541244,
+    84747,
+    1878515,
+    221089890,
+    18924392742,
+    4459525170,
+    4459131344,
+    4417880446,
+    4066338801,
+    4294284095,
+    4444863474,
+    3690593237,
+    4444952494,
+    3698713695,
+    4089257085,
+    4012970585,
+    4458570074,
+    4458487590,
+    4448083821,
+    2243012083,
+    592554033,
+    598834,
+    12333116,
+]
 
-if dataset_sizes and "size" in dataset_sizes and "configs" in dataset_sizes["size"]:
-    config_dict = {
-        config["config"]: config["num_bytes_parquet_files"]
-        for config in dataset_sizes["size"]["configs"]
-    }
+# if dataset_sizes and "size" in dataset_sizes and "configs" in dataset_sizes["size"]:
+#     config_dict = {
+#         config["config"]: config["num_bytes_parquet_files"]
+#         for config in dataset_sizes["size"]["configs"]
+#     }
 
-    for dataset in CHRONOS_TRAINING_DATASETS:
-        if dataset in config_dict:
-            CHRONOS_TRAINING_DATASET_SIZE.append(config_dict[dataset])
-        else:
-            print(f"Warning: Size information not found for dataset {dataset}")
-            CHRONOS_TRAINING_DATASET_SIZE.append(None)
+#     for dataset in CHRONOS_TRAINING_DATASETS:
+#         if dataset in config_dict:
+#             CHRONOS_TRAINING_DATASET_SIZE.append(config_dict[dataset])
+#         else:
+#             print(f"Warning: Size information not found for dataset {dataset}")
+#             CHRONOS_TRAINING_DATASET_SIZE.append(None)
