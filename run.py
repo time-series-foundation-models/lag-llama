@@ -291,7 +291,9 @@ def to_gluonts(entry):
     # If there's no "target" column, randomly select a float32 column
     if "target" not in entry:
         float32_columns = [
-            col for col in entry.keys() if entry[col].dtype == np.float32
+            col
+            for col in entry.keys()
+            if isinstance(entry[col], np.ndarray) and entry[col].dtype == np.float32
         ]
         if float32_columns:
             target_column = random.choice(float32_columns)
