@@ -94,7 +94,20 @@ ALL_CHRONOS_DATASETS = set(
         "uber_tlc_hourly",
         "ushcn_daily",
         "weatherbench_daily",
-        "weatherbench_hourly",
+        "weatherbench_hourly_10m_u_component_of_wind",
+        "weatherbench_hourly_10m_v_component_of_wind",
+        "weatherbench_hourly_2m_temperature",
+        "weatherbench_hourly_geopotential",
+        "weatherbench_hourly_potential_vorticity",
+        "weatherbench_hourly_relative_humidity",
+        "weatherbench_hourly_specific_humidity",
+        "weatherbench_hourly_temperature",
+        "weatherbench_hourly_toa_incident_solar_radiation",
+        "weatherbench_hourly_total_cloud_cover",
+        "weatherbench_hourly_total_precipitation",
+        "weatherbench_hourly_u_component_of_wind",
+        "weatherbench_hourly_v_component_of_wind",
+        "weatherbench_hourly_vorticity",
         "weatherbench_weekly",
         "wiki_daily_100k",
         "wind_farms_daily",
@@ -134,4 +147,6 @@ CHRONOS_ZERO_SHOT_DATASETS = set(
     ]
 )
 
-CHRONOS_TRAINING_DATASETS = list(ALL_CHRONOS_DATASETS - CHRONOS_ZERO_SHOT_DATASETS)
+CHRONOS_TRAINING_DATASETS = sorted(
+    list(ALL_CHRONOS_DATASETS - CHRONOS_ZERO_SHOT_DATASETS)
+)

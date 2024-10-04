@@ -439,7 +439,7 @@ class ChronosDataset(IterableDataset, ShuffleMixin):
             past_length=self.context_length + max(self.lags_seq),
             future_length=self.prediction_length,
             time_series_fields=[FieldName.FEAT_TIME, FieldName.OBSERVED_VALUES],
-            dummy_value=np.nan,
+            dummy_value=0.0,
         )
 
     def create_training_data(self, data):

@@ -328,20 +328,19 @@ class LagLlamaLightningModule(LightningModule):
     def _compute_loss(
         self,
         batch,
-        do_not_average=False,
         return_observed_values=False,
         aggregate_by=torch.mean,
+        orignal_scale=True,
     ):
-        past_target = batch[
-            "past_target"
-        ]  # (bsz, model.context_length+max(model.lags_seq))
-        past_observed_values = batch[
-            "past_observed_values"
-        ]  # (bsz, model.context_length+max(model.lags_seq)) with 0s or 1s indicating available (1s) or missing (0s)
-        future_target = batch["future_target"]  # (bsz, model.prediction_length)
-        future_observed_values = batch[
-            "future_observed_values"
-        ]  # (bsz, model.prediction_length) with 0s or 1s indicating available (1s) or missing (0s)
+        # (bsz, model.context_length+max(model.lags_seq))
+        past_target = batch["past_target"]
+
+        # (bsz, model.context_length+max(model.lags_seq)) with 0s or 1s indicating available (1s) or missing (0s)
+        past_observed_values = batch["past_observed_values"]
+        # (bsz, model.prediction_length)
+        future_target = batch["future_target"]
+        # (bsz, model.prediction_length) with 0s or 1s indicating available (1s) or missing (0s)
+        future_observed_values = batch["future_observed_values"]
         if self.time_feat:
             past_time_feat = batch["past_time_feat"]
             future_time_feat = batch["future_time_feat"]
@@ -353,44 +352,49 @@ class LagLlamaLightningModule(LightningModule):
         extra_shape = future_target.shape[:extra_dims]  # shape remains the same
 
         repeats = prod(extra_shape)  # usually 1
-        past_target = repeat_along_dim(
-            past_target, 0, repeats
-        )  # (bsz, model.context_length+max(model.lags_seq))
-        past_observed_values = repeat_along_dim(
-            past_observed_values, 0, repeats
-        )  # (bsz, model.context_length+max(model.lags_seq))
 
+        # (bsz, model.context_length+max(model.lags_seq))
+        past_target = repeat_along_dim(past_target, 0, repeats)
+
+        # (bsz, model.context_length+max(model.lags_seq))
+        past_observed_values = repeat_along_dim(past_observed_values, 0, repeats)
+
+        # (bsz, model.prediction_length)
         future_target_reshaped = future_target.reshape(
             -1,
             *future_target.shape[extra_dims + 1 :],
-        )  # (bsz, model.prediction_length)
+        )
+        # (bsz, model.prediction_length)
         future_observed_reshaped = future_observed_values.reshape(
             -1,
             *future_observed_values.shape[extra_dims + 1 :],
-        )  # (bsz, model.prediction_length)
+        )
 
+        # distr_args is a tuple with two tensors of shape (bsz, context_length+pred_len-1)
         distr_args, loc, scale = self.model(
             past_target=past_target,
             past_observed_values=past_observed_values,
             past_time_feat=past_time_feat,
             future_time_feat=future_time_feat,
             future_target=future_target_reshaped,
-        )  # distr_args is a tuple with two tensors of shape (bsz, context_length+pred_len-1)
-        context_target = take_last(
-            past_target, dim=-1, num=self.context_length - 1
-        )  # (bsz, context_length-1) # Basically removes the first value since it cannot be predicted
-        target = torch.cat(
-            (context_target, future_target_reshaped),
-            dim=1,
-        )  # (bsz, context_length-1+pred_len) # values that can be predicted
+        )
+        # (bsz, context_length-1) # Basically removes the first value since it cannot be predicted
+        context_target = take_last(past_target, dim=-1, num=self.context_length - 1)
+        # (bsz, context_length-1+pred_len) # values that can be predicted
+        target = torch.cat((context_target, future_target_reshaped), dim=1)
+        # same as context_target, but for observed_values tensor
         context_observed = take_last(
             past_observed_values, dim=-1, num=self.context_length - 1
-        )  # same as context_target, but for observed_values tensor
-        observed_values = torch.cat(
-            (context_observed, future_observed_reshaped), dim=1
-        )  # same as target but for observed_values tensor
+        )
+        # same as target but for observed_values tensor
+        observed_values = torch.cat((context_observed, future_observed_reshaped), dim=1)
 
-        loss_values = self.model.distr_output.loss(target, distr_args, loc, scale)
+        if orignal_scale:
+            loss_values = self.model.distr_output.loss(target, distr_args, loc, scale)
+        else:
+            loss_values = self.model.distr_output.loss(
+                (target - loc) / scale, distr_args
+            )
         loss_values = loss_values * observed_values.clamp_min(1)
 
         loss = aggregate_by(
@@ -427,12 +431,12 @@ class LagLlamaLightningModule(LightningModule):
                     batch["past_target"], batch["future_target"]
                 )
 
-        train_loss_avg, _ = self._compute_loss(batch, return_observed_values=True)
+        train_loss_avg = self._compute_loss(batch, return_observed_values=False)
 
         self.log(
-            "train_loss", train_loss_avg, on_epoch=True, on_step=False, prog_bar=False
+            "train_loss", train_loss_avg.mean(), on_epoch=True, on_step=False, prog_bar=False
         )
-        return train_loss_avg
+        return train_loss_avg.mean()
 
     def on_train_epoch_end(self):
         # Log all losses
@@ -466,12 +470,12 @@ class LagLlamaLightningModule(LightningModule):
         """
         Execute validation step.
         """
-        val_loss_avg, observed_values = self._compute_loss(
-            batch, return_observed_values=True
+        val_loss_avg = self._compute_loss(
+            batch, return_observed_values=False, orignal_scale=False
         )
 
-        self.log("val_loss", val_loss_avg, on_epoch=True, on_step=False, prog_bar=False)
-        return val_loss_avg
+        self.log("val_loss", val_loss_avg.mean(), on_epoch=True, on_step=False, prog_bar=False)
+        return val_loss_avg.mean()
 
     def on_validation_epoch_end(self):
         # Log all losses
