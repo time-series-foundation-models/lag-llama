@@ -363,13 +363,20 @@ class ChronosDataset(IterableDataset, ShuffleMixin):
         assert model_type in ("seq2seq", "causal")
 
         self.datasets = [
-            load_dataset(path, dataset, split="train") for dataset in datasets
+            load_dataset(path, dataset, split="train", streaming=True) for dataset in datasets
         ]
         for dataset in self.datasets:
-            dataset.set_format("numpy")
+            dataset.with_format("numpy")
 
         if probabilities is None:
-            num_series_per_dataset = [len(dataset) for dataset in self.datasets]
+            num_series_per_dataset = []
+            for dataset in self.datasets:
+                # Estimate the number of series by sampling a small portion of the dataset
+                sample_size = 1000  # Adjust this value based on your needs
+                series_count = sum(1 for _ in itertools.islice(dataset, sample_size))
+                estimated_total = int(series_count * (len(dataset) / sample_size))
+                num_series_per_dataset.append(estimated_total)
+            
             total_series = sum(num_series_per_dataset)
             self.probabilities = [n / total_series for n in num_series_per_dataset]
         else:
