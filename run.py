@@ -23,7 +23,7 @@ from hashlib import sha1
 from pathlib import Path
 from typing import Iterator, List, Optional
 
-import lightning
+import lightning as L
 import numpy as np
 import pandas as pd
 import torch
@@ -39,6 +39,7 @@ from gluonts.transform import (
     LeavesMissingValues,
     LastValueImputation,
     MissingValueImputation,
+    RemoveFields,
     TestSplitSampler,
     ValidationSplitSampler,
 )
@@ -50,7 +51,7 @@ from lightning.pytorch.callbacks import (
     StochasticWeightAveraging,
 )
 from lightning.pytorch.loggers import TensorBoardLogger
-from torch.utils.data import IterableDataset, get_worker_info
+from torch.utils.data import IterableDataset, get_worker_info, DataLoader
 
 from data.dataset_list import CHRONOS_TRAINING_DATASETS
 from helpers.utils import plot_forecasts, set_seed
@@ -303,7 +304,7 @@ def to_gluonts(entry):
 
     return {
         "start": pd.Period(entry["timestamp"][0], freq=dataset_freq),
-        "target": entry["target"],
+        "target": target,
         "item_id": entry["id"],
     }
 
@@ -445,22 +446,31 @@ class ChronosDataset(IterableDataset, ShuffleMixin):
         data = self.transformation.apply(data, is_train=True)
 
         data = Cyclic(data).stream()
-        split_transform = self._create_instance_splitter(
-            "training"
-        ) + FilterTransformation(
-            condition=lambda entry: (~np.isnan(entry["past_target"])).sum() > 0
+        split_transform = (
+            self._create_instance_splitter("training")
+            + FilterTransformation(
+                condition=lambda entry: (~np.isnan(entry["past_target"])).sum() > 0
+            )
+            + RemoveFields(["forecast_start", "start"])
         )
         data = split_transform.apply(data, is_train=True)
+
         return data
 
     def create_test_data(self, data):
         data = self.transformation.apply(data, is_train=False)
-        data = self._create_instance_splitter("test").apply(data, is_train=False)
+        split_transform = self._create_instance_splitter("test") + RemoveFields(
+            ["forecast_start", "start"]
+        )
+        data = split_transform.apply(data, is_train=False)
         return data
 
     def create_validation_data(self, data):
         data = self.transformation.apply(data, is_train=True)
-        data = self._create_instance_splitter("validation").apply(data, is_train=False)
+        split_transform = self._create_instance_splitter("validation") + RemoveFields(
+            ["forecast_start", "start"]
+        )
+        data = split_transform.apply(data, is_train=False)
         return data
 
     def __iter__(self) -> Iterator:
@@ -515,10 +525,47 @@ class ChronosDataset(IterableDataset, ShuffleMixin):
                 yield entry
 
 
+def train_model(
+    training_network,
+    trainer_kwargs,
+    training_data,
+    batch_size,
+    validation_data=None,
+    ckpt_path: Optional[str] = None,
+):
+    monitor = "train_loss" if validation_data is None else "val_loss"
+    checkpoint = ModelCheckpoint(monitor=monitor, mode="min", verbose=True)
+    custom_callbacks = trainer_kwargs.pop("callbacks", [])
+
+    trainer = L.Trainer(
+        **{
+            "accelerator": "auto",
+            "callbacks": [checkpoint] + custom_callbacks,
+            **trainer_kwargs,
+        }
+    )
+
+    training_data_loader = DataLoader(
+        training_data, batch_size=batch_size, pin_memory=True, num_workers=4
+    )
+    validation_data_loader = DataLoader(
+        validation_data, batch_size=batch_size, pin_memory=True, num_workers=4
+    )
+
+    trainer.fit(
+        model=training_network,
+        train_dataloaders=training_data_loader,
+        val_dataloaders=validation_data_loader,
+        ckpt_path=ckpt_path,
+    )
+
+    return training_network, trainer
+
+
 def train(args):
     # Set seed
     set_seed(args.seed)
-    lightning.seed_everything(args.seed)
+    L.seed_everything(args.seed)
 
     # # Print GPU stats
     # print_gpu_stats()
@@ -947,152 +994,161 @@ def train(args):
         )
 
         # Batch size search since when we scale up, we might not be able to use the same batch size for all models
-        if args.search_batch_size:
-            estimator.num_batches_per_epoch = 10
-            estimator.limit_val_batches = 10
-            estimator.trainer_kwargs["max_epochs"] = 1
-            estimator.trainer_kwargs["callbacks"] = []
-            estimator.trainer_kwargs["logger"] = None
-            fulldir_batchsize_search = os.path.join(
-                fulldir_experiments, "batch-size-search"
-            )
-            os.makedirs(fulldir_batchsize_search, exist_ok=True)
-            while batch_size >= 1:
-                try:
-                    print("Trying batch size:", batch_size)
-                    batch_size_search_dir = os.path.join(
-                        fulldir_batchsize_search, "batch-size-search-" + str(batch_size)
-                    )
-                    os.makedirs(batch_size_search_dir, exist_ok=True)
-                    estimator.batch_size = batch_size
-                    estimator.trainer_kwargs["default_root_dir"] = (
-                        fulldir_batchsize_search
-                    )
-                    # Train
-                    train_output = estimator.train_model(
-                        training_data=train_data,
-                        validation_data=val_data,
-                        shuffle_buffer_length=None,
-                        ckpt_path=None,
-                    )
-                    break
-                except RuntimeError as e:
-                    if "out of memory" in str(e):
-                        gc.collect()
-                        torch.cuda.empty_cache()
-                        if batch_size == 1:
-                            print(
-                                "Batch is already at the minimum. Cannot reduce further. Exiting..."
-                            )
-                            exit(0)
-                        else:
-                            print("Caught OutOfMemoryError. Reducing batch size...")
-                            batch_size //= 2
-                            continue
-                    else:
-                        print(e)
-                        exit(1)
-            estimator.num_batches_per_epoch = args.num_batches_per_epoch
-            estimator.limit_val_batches = args.limit_val_batches
-            estimator.trainer_kwargs["max_epochs"] = args.max_epochs
-            estimator.trainer_kwargs["callbacks"] = callbacks
-            estimator.trainer_kwargs["logger"] = logger
-            estimator.trainer_kwargs["default_root_dir"] = fulldir_experiments
-            if batch_size > 1:
-                batch_size //= 2
-            estimator.batch_size = batch_size
-            print("\nUsing a batch size of", batch_size, "\n")
-            logger.log_hyperparams({"batch_size": batch_size})
+        # if args.search_batch_size:
+        #     estimator.num_batches_per_epoch = 10
+        #     estimator.limit_val_batches = 10
+        #     estimator.trainer_kwargs["max_epochs"] = 1
+        #     estimator.trainer_kwargs["callbacks"] = []
+        #     estimator.trainer_kwargs["logger"] = None
+        #     fulldir_batchsize_search = os.path.join(
+        #         fulldir_experiments, "batch-size-search"
+        #     )
+        #     os.makedirs(fulldir_batchsize_search, exist_ok=True)
+        #     while batch_size >= 1:
+        #         try:
+        #             print("Trying batch size:", batch_size)
+        #             batch_size_search_dir = os.path.join(
+        #                 fulldir_batchsize_search, "batch-size-search-" + str(batch_size)
+        #             )
+        #             os.makedirs(batch_size_search_dir, exist_ok=True)
+        #             estimator.batch_size = batch_size
+        #             estimator.trainer_kwargs["default_root_dir"] = (
+        #                 fulldir_batchsize_search
+        #             )
+        #             # Train
+        #             train_output = estimator.train_model(
+        #                 training_data=train_data,
+        #                 validation_data=val_data,
+        #                 shuffle_buffer_length=None,
+        #                 ckpt_path=None,
+        #             )
+        #             break
+        #         except RuntimeError as e:
+        #             if "out of memory" in str(e):
+        #                 gc.collect()
+        #                 torch.cuda.empty_cache()
+        #                 if batch_size == 1:
+        #                     print(
+        #                         "Batch is already at the minimum. Cannot reduce further. Exiting..."
+        #                     )
+        #                     exit(0)
+        #                 else:
+        #                     print("Caught OutOfMemoryError. Reducing batch size...")
+        #                     batch_size //= 2
+        #                     continue
+        #             else:
+        #                 print(e)
+        #                 exit(1)
+        #     estimator.num_batches_per_epoch = args.num_batches_per_epoch
+        #     estimator.limit_val_batches = args.limit_val_batches
+        #     estimator.trainer_kwargs["max_epochs"] = args.max_epochs
+        #     estimator.trainer_kwargs["callbacks"] = callbacks
+        #     estimator.trainer_kwargs["logger"] = logger
+        #     estimator.trainer_kwargs["default_root_dir"] = fulldir_experiments
+        #     if batch_size > 1:
+        #         batch_size //= 2
+        #     estimator.batch_size = batch_size
+        #     print("\nUsing a batch size of", batch_size, "\n")
+        #     logger.log_hyperparams({"batch_size": batch_size})
 
-        # Train
-        train_output = estimator.train_model(
+        # Train using lightning trainer
+
+        # train_output = estimator.train_model(
+        #     training_data=train_data,
+        #     validation_data=val_data,
+        #     shuffle_buffer_length=None,
+        #     ckpt_path=ckpt_path,
+        # )
+        trained_model, trainer = train_model(
+            training_network=estimator.create_lightning_module(),
+            trainer_kwargs=estimator.trainer_kwargs,
             training_data=train_data,
+            batch_size=batch_size,
             validation_data=val_data,
-            shuffle_buffer_length=None,
             ckpt_path=ckpt_path,
         )
 
         # Set checkpoint path before evaluating
-        best_model_path = train_output.trainer.checkpoint_callback.best_model_path
+        best_model_path = trainer.checkpoint_callback.best_model_path
         estimator.ckpt_path = best_model_path
 
-    print("Using checkpoint:", estimator.ckpt_path, "for evaluation")
-    # Make directory to store metrics
-    metrics_dir = os.path.join(fulldir_experiments, "metrics")
-    os.makedirs(metrics_dir, exist_ok=True)
+    # print("Using checkpoint:", estimator.ckpt_path, "for evaluation")
+    # # Make directory to store metrics
+    # metrics_dir = os.path.join(fulldir_experiments, "metrics")
+    # os.makedirs(metrics_dir, exist_ok=True)
 
-    # Evaluate
-    evaluation_datasets = (
-        args.test_datasets + train_dataset_names
-        if not args.single_dataset
-        else [args.single_dataset]
-    )
+    # # Evaluate
+    # evaluation_datasets = (
+    #     args.test_datasets + train_dataset_names
+    #     if not args.single_dataset
+    #     else [args.single_dataset]
+    # )
 
-    for name in evaluation_datasets:  # [test_dataset]:
-        print("Evaluating on", name)
-        test_data, prediction_length, _ = create_test_dataset(
-            name, args.dataset_path, window_size
-        )
-        print("# of Series in the test data:", len(test_data))
+    # for name in evaluation_datasets:  # [test_dataset]:
+    #     print("Evaluating on", name)
+    #     test_data, prediction_length, _ = create_test_dataset(
+    #         name, args.dataset_path, window_size
+    #     )
+    #     print("# of Series in the test data:", len(test_data))
 
-        # Adapt evaluator to new dataset
-        estimator.prediction_length = prediction_length
-        # Batch size loop just in case. This is mandatory as it involves sampling etc.
-        # NOTE: In case can't do sampling with even batch size of 1, then keep reducing num_parallel_samples until we can (keeping batch size at 1)
-        while batch_size >= 1:
-            try:
-                # Batch size
-                print("Trying batch size:", batch_size)
-                estimator.batch_size = batch_size
-                predictor = estimator.create_predictor(
-                    estimator.create_transformation(),
-                    estimator.create_lightning_module(),
-                )
-                # Make evaluations
-                forecast_it, ts_it = make_evaluation_predictions(
-                    dataset=test_data, predictor=predictor, num_samples=args.num_samples
-                )
-                forecasts = list(forecast_it)
-                tss = list(ts_it)
-                break
-            except RuntimeError as e:
-                if "out of memory" in str(e):
-                    gc.collect()
-                    torch.cuda.empty_cache()
-                    if batch_size == 1:
-                        print(
-                            "Batch is already at the minimum. Cannot reduce further. Exiting..."
-                        )
-                        exit(0)
-                    else:
-                        print("Caught OutOfMemoryError. Reducing batch size...")
-                        batch_size //= 2
-                        continue
-                else:
-                    print(e)
-                    exit(1)
+    #     # Adapt evaluator to new dataset
+    #     estimator.prediction_length = prediction_length
+    #     # Batch size loop just in case. This is mandatory as it involves sampling etc.
+    #     # NOTE: In case can't do sampling with even batch size of 1, then keep reducing num_parallel_samples until we can (keeping batch size at 1)
+    #     while batch_size >= 1:
+    #         try:
+    #             # Batch size
+    #             print("Trying batch size:", batch_size)
+    #             estimator.batch_size = batch_size
+    #             predictor = estimator.create_predictor(
+    #                 estimator.create_transformation(),
+    #                 estimator.create_lightning_module(),
+    #             )
+    #             # Make evaluations
+    #             forecast_it, ts_it = make_evaluation_predictions(
+    #                 dataset=test_data, predictor=predictor, num_samples=args.num_samples
+    #             )
+    #             forecasts = list(forecast_it)
+    #             tss = list(ts_it)
+    #             break
+    #         except RuntimeError as e:
+    #             if "out of memory" in str(e):
+    #                 gc.collect()
+    #                 torch.cuda.empty_cache()
+    #                 if batch_size == 1:
+    #                     print(
+    #                         "Batch is already at the minimum. Cannot reduce further. Exiting..."
+    #                     )
+    #                     exit(0)
+    #                 else:
+    #                     print("Caught OutOfMemoryError. Reducing batch size...")
+    #                     batch_size //= 2
+    #                     continue
+    #             else:
+    #                 print(e)
+    #                 exit(1)
 
-        if args.plot_test_forecasts:
-            print("Plotting forecasts")
-            figure = plot_forecasts(forecasts, tss, prediction_length)
-            logger.experiment.add_figure(f"Forecast_plot_of_{name}", figure, 0)
+    #     if args.plot_test_forecasts:
+    #         print("Plotting forecasts")
+    #         figure = plot_forecasts(forecasts, tss, prediction_length)
+    #         logger.experiment.add_figure(f"Forecast_plot_of_{name}", figure, 0)
 
-        # Get metrics
-        evaluator = Evaluator(
-            num_workers=args.num_workers, aggregation_strategy=aggregate_valid
-        )
-        agg_metrics, _ = evaluator(
-            iter(tss), iter(forecasts), num_series=len(test_data)
-        )
-        # Save metrics
-        metrics_savepath = metrics_dir + "/" + name + ".json"
-        with open(metrics_savepath, "w") as metrics_savefile:
-            json.dump(agg_metrics, metrics_savefile)
+    #     # Get metrics
+    #     evaluator = Evaluator(
+    #         num_workers=args.num_workers, aggregation_strategy=aggregate_valid
+    #     )
+    #     agg_metrics, _ = evaluator(
+    #         iter(tss), iter(forecasts), num_series=len(test_data)
+    #     )
+    #     # Save metrics
+    #     metrics_savepath = metrics_dir + "/" + name + ".json"
+    #     with open(metrics_savepath, "w") as metrics_savefile:
+    #         json.dump(agg_metrics, metrics_savefile)
 
-        # Log metrics. For now only CRPS is logged.
-        logger.experiment.add_scalar(
-            f"test/{name}/CRPS", agg_metrics["mean_wQuantileLoss"], 0
-        )
+    #     # Log metrics. For now only CRPS is logged.
+    #     logger.experiment.add_scalar(
+    #         f"test/{name}/CRPS", agg_metrics["mean_wQuantileLoss"], 0
+    #     )
 
 
 if __name__ == "__main__":

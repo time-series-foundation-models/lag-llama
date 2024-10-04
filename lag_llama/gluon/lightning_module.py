@@ -427,9 +427,7 @@ class LagLlamaLightningModule(LightningModule):
                     batch["past_target"], batch["future_target"]
                 )
 
-        train_loss_avg, observed_values = self._compute_loss(
-            batch, return_observed_values=True
-        )
+        train_loss_avg, _ = self._compute_loss(batch, return_observed_values=True)
 
         self.log(
             "train_loss", train_loss_avg, on_epoch=True, on_step=False, prog_bar=False
