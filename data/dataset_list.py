@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import requests
+import json
+
 ALL_DATASETS = set(
     [
         "australian_electricity_demand",
@@ -150,3 +153,34 @@ CHRONOS_ZERO_SHOT_DATASETS = set(
 CHRONOS_TRAINING_DATASETS = sorted(
     list(ALL_CHRONOS_DATASETS - CHRONOS_ZERO_SHOT_DATASETS)
 )
+
+
+# make a call to https://datasets-server.huggingface.co/size?dataset=autogluon/chronos_datasets
+# to get the size of each dataset
+def get_dataset_sizes(datasets="autogluon/chronos_datasets"):
+    url = f"https://datasets-server.huggingface.co/size?dataset={datasets}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        return data
+    else:
+        print(f"Failed to retrieve dataset sizes. Status code: {response.status_code}")
+        return None
+
+
+dataset_sizes = get_dataset_sizes()
+
+CHRONOS_TRAINING_DATASET_SIZE = []
+
+if dataset_sizes and "size" in dataset_sizes and "configs" in dataset_sizes["size"]:
+    config_dict = {
+        config["config"]: config["num_bytes_parquet_files"]
+        for config in dataset_sizes["size"]["configs"]
+    }
+
+    for dataset in CHRONOS_TRAINING_DATASETS:
+        if dataset in config_dict:
+            CHRONOS_TRAINING_DATASET_SIZE.append(config_dict[dataset])
+        else:
+            print(f"Warning: Size information not found for dataset {dataset}")
+            CHRONOS_TRAINING_DATASET_SIZE.append(None)

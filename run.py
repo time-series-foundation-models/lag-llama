@@ -52,7 +52,7 @@ from lightning.pytorch.callbacks import (
 from lightning.pytorch.loggers import TensorBoardLogger
 from torch.utils.data import IterableDataset, get_worker_info, DataLoader
 
-from data.dataset_list import CHRONOS_TRAINING_DATASETS
+from data.dataset_list import CHRONOS_TRAINING_DATASETS, CHRONOS_TRAINING_DATASET_SIZE
 from helpers.utils import plot_forecasts, set_seed
 from lag_llama.gluon.estimator import LagLlamaEstimator
 
@@ -363,22 +363,19 @@ class ChronosDataset(IterableDataset, ShuffleMixin):
         assert model_type in ("seq2seq", "causal")
 
         self.datasets = [
-            load_dataset(path, dataset, split="train", streaming=True) for dataset in datasets
+            load_dataset(path, dataset, split="train", streaming=True)
+            for dataset in datasets
         ]
         for dataset in self.datasets:
             dataset.with_format("numpy")
 
         if probabilities is None:
-            num_series_per_dataset = []
-            for dataset in self.datasets:
-                # Estimate the number of series by sampling a small portion of the dataset
-                sample_size = 1000  # Adjust this value based on your needs
-                series_count = sum(1 for _ in itertools.islice(dataset, sample_size))
-                estimated_total = int(series_count * (len(dataset) / sample_size))
-                num_series_per_dataset.append(estimated_total)
-            
-            total_series = sum(num_series_per_dataset)
-            self.probabilities = [n / total_series for n in num_series_per_dataset]
+            # use the CHRONOS_TRAINING_DATASETS normalized by the sum
+            self.probabilities = [
+                size / sum(CHRONOS_TRAINING_DATASET_SIZE)
+                for size in CHRONOS_TRAINING_DATASET_SIZE
+            ]
+
         else:
             assert len(probabilities) == len(datasets)
             self.probabilities = probabilities
