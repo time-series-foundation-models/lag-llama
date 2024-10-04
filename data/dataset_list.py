@@ -169,8 +169,6 @@ def get_dataset_sizes(datasets="autogluon/chronos_datasets"):
         return None
 
 
-dataset_sizes = get_dataset_sizes()
-
 CHRONOS_TRAINING_DATASET_SIZE = [
     281757285,
     65546675,
@@ -214,6 +212,7 @@ CHRONOS_TRAINING_DATASET_SIZE = [
     12333116,
 ]
 
+# dataset_sizes = get_dataset_sizes()
 # if dataset_sizes and "size" in dataset_sizes and "configs" in dataset_sizes["size"]:
 #     config_dict = {
 #         config["config"]: config["num_bytes_parquet_files"]
