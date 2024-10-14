@@ -12,36 +12,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import itertools
 import json
 import os
 import random
 import warnings
-from functools import partial
 from hashlib import sha1
 from pathlib import Path
-from typing import Iterator, List, Optional
+from typing import List, Optional
 
 import lightning as L
 import numpy as np
 import pandas as pd
 import torch
-from datasets import load_dataset
+from datasets import load_dataset, interleave_datasets
+
 from gluonts.dataset.field_names import FieldName
-from gluonts.evaluation import Evaluator, make_evaluation_predictions
-from gluonts.evaluation._base import aggregate_valid
-from gluonts.itertools import Cyclic, Map
+
+
 from gluonts.transform import (
     ExpectedNumInstanceSampler,
-    FilterTransformation,
     InstanceSplitter,
     LeavesMissingValues,
     LastValueImputation,
     MissingValueImputation,
-    RemoveFields,
     TestSplitSampler,
     ValidationSplitSampler,
 )
+from gluonts.time_feature import time_features_from_frequency_str
+
 from jsonargparse import ActionConfigFile, ArgumentParser
 from lightning.pytorch.callbacks import (
     EarlyStopping,
@@ -50,83 +48,14 @@ from lightning.pytorch.callbacks import (
     StochasticWeightAveraging,
 )
 from lightning.pytorch.loggers import TensorBoardLogger
-from torch.utils.data import IterableDataset, get_worker_info, DataLoader
+from torch.utils.data import DataLoader
 
 from data.dataset_list import CHRONOS_TRAINING_DATASETS, CHRONOS_TRAINING_DATASET_SIZE
-from helpers.utils import plot_forecasts, set_seed
+from helpers.utils import set_seed
 from lag_llama.gluon.estimator import LagLlamaEstimator
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 warnings.simplefilter(action="ignore", category=UserWarning)
-
-
-def has_enough_observations(
-    entry: dict, min_length: int = 0, max_missing_prop: float = 1.0
-) -> bool:
-    """
-    Check if the given entry has enough observations in the ``"target"`` attribute.
-
-    Parameters
-    ----------
-    entry
-        The data entry (dictionary) to be tested.
-    min_length
-        The minimum length the ``"target"`` attribute must have.
-    max_missing_prop
-        The maximum proportion of missing data allowed in the ``"target"``
-        attribute.
-    """
-    if (
-        len(entry["target"]) >= min_length
-        and np.isnan(entry["target"]).mean() <= max_missing_prop
-    ):
-        return True
-    return False
-
-
-class PseudoShuffledIterableDataset(IterableDataset):
-    """
-    Shuffle entries from an iterable by temporarily accumulating them
-    in an intermediate buffer.
-
-    Parameters
-    ----------
-    base_dataset
-        The original iterable object, representing the dataset.
-    shuffle_buffer_length
-        Size of the buffer use to shuffle entries from the base dataset.
-    """
-
-    def __init__(self, base_dataset, shuffle_buffer_length: int = 100) -> None:
-        super().__init__()
-        self.base_dataset = base_dataset
-        self.shuffle_buffer_length = shuffle_buffer_length
-        self.generator = torch.Generator()
-
-    def __iter__(self):
-        shuffle_buffer = []
-
-        for element in self.base_dataset:
-            shuffle_buffer.append(element)
-            if len(shuffle_buffer) >= self.shuffle_buffer_length:
-                idx = torch.randint(
-                    len(shuffle_buffer), size=(), generator=self.generator
-                )
-                yield shuffle_buffer.pop(idx)
-
-        while shuffle_buffer:
-            idx = torch.randint(len(shuffle_buffer), size=(), generator=self.generator)
-            yield shuffle_buffer.pop(idx)
-
-
-class ShuffleMixin:
-    """
-    Mix-in class that datasets can inherit from to get
-    shuffling functionality.
-    """
-
-    def shuffle(self, shuffle_buffer_length: int = 100):
-        return PseudoShuffledIterableDataset(self, shuffle_buffer_length)
 
 
 offset_alias_to_period_alias = {
@@ -293,7 +222,7 @@ def to_gluonts(entry):
         float32_columns = [
             col
             for col in entry.keys()
-            if isinstance(entry[col], np.ndarray) and entry[col].dtype == np.float32
+            if isinstance(entry[col], (list, np.ndarray)) and col != "timestamp"
         ]
         if float32_columns:
             target_column = random.choice(float32_columns)
@@ -310,7 +239,7 @@ def to_gluonts(entry):
     }
 
 
-class ChronosDataset(IterableDataset, ShuffleMixin):
+class ChronosDataset:
     """
     Dataset wrapper, using transforms to turn data from a time series
     into a gluonts-compatible dataset list.
@@ -357,6 +286,7 @@ class ChronosDataset(IterableDataset, ShuffleMixin):
         model_type: str = "causal",
         imputation_method: Optional[MissingValueImputation] = None,
         mode: str = "training",
+        num_shards: int = 64,
         np_dtype=np.float32,
     ) -> None:
         super().__init__()
@@ -364,11 +294,8 @@ class ChronosDataset(IterableDataset, ShuffleMixin):
         assert mode in ("training", "validation", "test")
         assert model_type in ("seq2seq", "causal")
 
-        self.datasets = [
-            load_dataset(path, dataset, split="train", streaming=True)
-            for dataset in datasets
-        ]
-        for dataset in self.datasets:
+        datasets = [load_dataset(path, dataset, split="train") for dataset in datasets]
+        for dataset in datasets:
             dataset.with_format("numpy")
 
         if probabilities is None:
@@ -382,57 +309,145 @@ class ChronosDataset(IterableDataset, ShuffleMixin):
             assert len(probabilities) == len(datasets)
             self.probabilities = probabilities
 
+        datasets = interleave_datasets(datasets, probabilities=probabilities)
+        datasets = datasets.to_iterable_dataset(num_shards=num_shards)
+        datasets = datasets.map(to_gluonts)
+        self.datasets = datasets.select_columns(
+            [FieldName.ITEM_ID, "timestamp", FieldName.TARGET, FieldName.START]
+        )
+
+        self.mode = mode
+        self.min_past = min_past or prediction_length
         self.transformation = transformation
         self.lags_seq = lags_seq
 
         self.context_length = context_length
         self.prediction_length = prediction_length
         self.drop_prob = drop_prob if model_type == "seq2seq" else 0.0
-        self.min_past = min_past or prediction_length
+
         self.model_type = model_type
         self.imputation_method = (
             imputation_method or LeavesMissingValues()
             if model_type == "seq2seq"
             else LastValueImputation()
         )
-        self.mode = mode
         self.np_dtype = np_dtype
 
-    def preprocess_entry(self, entry: dict, mode: str) -> dict:
-        entry = to_gluonts(entry)
+    def to_gluonts(entry):
+        dataset_freq = pd.infer_freq(entry["timestamp"])
+        dataset_freq = offset_alias_to_period_alias.get(dataset_freq, dataset_freq)
 
-        entry = {f: entry[f] for f in ["start", "target"]}
-        entry["target"] = np.asarray(entry["target"], dtype=self.np_dtype)
-        assert entry["target"].ndim == 1, f"got {entry['target'].ndim=}, expected 1"
+        # If there's no "target" column, randomly select a float32 column
+        if "target" not in entry or entry["target"] is None:
+            float32_columns = [
+                col
+                for col in entry.keys()
+                if isinstance(entry[col], (list, np.ndarray)) and col != "timestamp"
+            ]
+            if float32_columns:
+                target_column = random.choice(float32_columns)
+                target = entry[target_column]
+            else:
+                raise ValueError("No suitable float32 column found for target")
+        else:
+            target = entry["target"]
+        return {
+            FieldName.START: pd.Period(entry["timestamp"][0], freq=dataset_freq),
+            FieldName.TARGET: np.asarray(target, dtype=np.float32),
+            FieldName.ITEM_ID: entry["id"],
+            "timestamp": np.asarray(entry["timestamp"]),
+        }
 
-        if self.model_type == "causal":
-            # Causal models do not play nice with missing values, so it is
-            # recommended to use an imputation method, e.g., LastValueImputation
-            entry["target"] = self.imputation_method(entry["target"])
+    # def __post_init__(self):
+    #     preprocessed_datasets = [
+    #         Map(
+    #             partial(self.preprocess_entry, mode=self.mode),
+    #             dataset,
+    #         )
+    #         for dataset in self.datasets
+    #     ]
+    #     if self.mode == "training":
+    #         iterables = [
+    #             IterableDataset.from_generator(self.create_training_data(dataset)) for dataset in preprocessed_datasets
+    #         ]
+    #     elif self.mode == "test":
+    #         iterables = [
+    #             IterableDataset.from_generator(self.create_test_data(dataset)) for dataset in preprocessed_datasets
+    #         ]
+    #     else:
+    #         iterables = [
+    #             IterableDataset.from_generator(self.create_validation_data(dataset))
+    #             for dataset in preprocessed_datasets
+    #         ]
 
-        if mode == "training" and self.drop_prob > 0:
-            target = entry["target"].copy()
-            drop_p = np.random.uniform(low=0.0, high=self.drop_prob)
-            mask = np.random.choice(
-                [True, False], size=len(target), p=[drop_p, 1 - drop_p]
-            )
-            target[mask] = np.nan
-            entry["target"] = target
+    #     self.datasets = interleave_datasets(iterables, probabilities=self.probabilities)
 
-        return entry
+    # def __len__(self):
+    #     return sum(prob for prob in self.probabilities)
 
-    def _create_instance_splitter(self, mode: str):
+    # def preprocess_entry(self, entry: dict, mode: str) -> dict:
+    #     # entry = to_gluonts(entry)
+
+    #     if "target" not in entry:
+    #         float32_columns = [
+    #             col
+    #             for col in entry.keys()
+    #             if isinstance(entry[col], (list, np.ndarray)) and col != "timestamp"
+    #         ]
+    #         if float32_columns:
+    #             target_column = random.choice(float32_columns)
+    #             target = entry[target_column]
+    #         else:
+    #             raise ValueError("No suitable float32 column found for target")
+    #     else:
+    #         target = entry["target"]
+
+    #     dataset_freq = pd.infer_freq(entry["timestamp"])
+    #     entry["start"] = pd.Period(entry["timestamp"][0], freq=dataset_freq)
+    #     entry["item_id"] = entry["id"]
+    #     entry["timestamp"] = np.asarray(entry["timestamp"])
+
+    #     # entry = {f: entry[f] for f in ["start", "target"]}
+
+    #     entry["target"] = np.asarray(target, dtype=self.np_dtype)
+    #     assert entry["target"].ndim == 1, f"got {entry['target'].ndim=}, expected 1"
+
+    #     if self.model_type == "causal":
+    #         # Causal models do not play nice with missing values, so it is
+    #         # recommended to use an imputation method, e.g., LastValueImputation
+    #         entry["target"] = self.imputation_method(entry["target"])
+
+    #     if mode == "training" and self.drop_prob > 0:
+    #         target = entry["target"].copy()
+    #         drop_p = np.random.uniform(low=0.0, high=self.drop_prob)
+    #         mask = np.random.choice(
+    #             [True, False], size=len(target), p=[drop_p, 1 - drop_p]
+    #         )
+    #         target[mask] = np.nan
+    #         entry["target"] = target
+
+    #     return entry
+
+    def _create_instance_splitter(
+        self,
+        mode: str = "training",
+        past_length=1024,
+        prediction_length=1,
+        min_past=None,
+    ):
         assert mode in ["training", "test", "validation"]
+        if min_past is None:
+            min_past = prediction_length
 
         instance_sampler = {
             "training": ExpectedNumInstanceSampler(
                 num_instances=1.0,
                 min_instances=1,
-                min_past=self.min_past,
-                min_future=self.prediction_length,
+                min_past=min_past,
+                min_future=prediction_length,
             ),
             "test": TestSplitSampler(),
-            "validation": ValidationSplitSampler(min_future=self.prediction_length),
+            "validation": ValidationSplitSampler(min_future=prediction_length),
         }[mode]
 
         return InstanceSplitter(
@@ -441,93 +456,162 @@ class ChronosDataset(IterableDataset, ShuffleMixin):
             start_field=FieldName.START,
             forecast_start_field=FieldName.FORECAST_START,
             instance_sampler=instance_sampler,
-            past_length=self.context_length + max(self.lags_seq),
-            future_length=self.prediction_length,
-            time_series_fields=[FieldName.FEAT_TIME, FieldName.OBSERVED_VALUES],
-            dummy_value=0.0,
+            past_length=past_length,
+            future_length=prediction_length,
+            time_series_fields=["timestamp"],
+            dummy_value=np.nan,
         )
+
+    def add_features(entry, time_features):
+        entry[f"past_{FieldName.TIME_FEAT}"] = (
+            np.vstack(
+                [
+                    feat(pd.to_datetime(entry["past_timestamp"]))
+                    for feat in time_features
+                ]
+            )
+            .astype(np.float32)
+            .T
+        )
+
+        entry[f"future_{FieldName.TIME_FEAT}"] = (
+            np.vstack(
+                [
+                    feat(pd.to_datetime(entry["future_timestamp"]))
+                    for feat in time_features
+                ]
+            )
+            .astype(np.float32)
+            .T
+        )
+
+        past_nan = np.isnan(entry[f"past_{FieldName.TARGET}"])
+        future_nan = np.isnan(entry[f"future_{FieldName.TARGET}"])
+        entry[f"past_{FieldName.OBSERVED_VALUES}"] = np.invert(past_nan)
+        entry[f"future_{FieldName.OBSERVED_VALUES}"] = np.invert(future_nan)
+        entry[f"past_{FieldName.TARGET}"][past_nan] = 0.0
+        entry[f"future_{FieldName.TARGET}"][future_nan] = 0.0
+
+        return entry
 
     def create_training_data(self, data):
-        data = self.transformation.apply(data, is_train=True)
-
-        data = Cyclic(data).stream()
-        split_transform = (
-            self._create_instance_splitter("training")
-            + FilterTransformation(
-                condition=lambda entry: (~np.isnan(entry["past_target"])).sum() > 0
-            )
-            + RemoveFields(["forecast_start", "start"])
+        split_transform = self._create_instance_splitter(
+            "training",
+            past_length=self.context_length + max(self.lags_seq),
+            prediction_length=self.prediction_length,
         )
-        data = split_transform.apply(data, is_train=True)
 
-        return data
+        def split(entry, split_transform):
+            return next(iter(split_transform.apply([entry], is_train=True)))
+
+        datasets = self.datasets.map(
+            split, fn_kwargs={"split_transform": split_transform}
+        )
+        time_features = time_features_from_frequency_str("s")
+        datasets = datasets.map(
+            self.add_features, fn_kwargs={"time_features": time_features}
+        )
+        return datasets.select_columns(
+            [
+                "past_target",
+                "future_target",
+                "past_time_feat",
+                "future_time_feat",
+                "past_observed_values",
+                "future_observed_values",
+            ]
+        )
 
     def create_test_data(self, data):
-        data = self.transformation.apply(data, is_train=False)
-        split_transform = self._create_instance_splitter("test") + RemoveFields(
-            ["forecast_start", "start"]
+        split_transform = self._create_instance_splitter(
+            "test",
+            past_length=self.context_length + max(self.lags_seq),
+            prediction_length=self.prediction_length,
         )
-        data = split_transform.apply(data, is_train=False)
-        return data
+
+        def split(entry, split_transform):
+            return next(iter(split_transform.apply([entry], is_train=False)))
+
+        datasets = self.datasets.map(
+            split, fn_kwargs={"split_transform": split_transform}
+        )
+        time_features = time_features_from_frequency_str("s")
+        datasets = datasets.map(
+            self.add_features, fn_kwargs={"time_features": time_features}
+        )
+        return datasets.select_columns(
+            [
+                "past_target",
+                "future_target",
+                "past_time_feat",
+                "future_time_feat",
+                "past_observed_values",
+                "future_observed_values",
+            ]
+        )
 
     def create_validation_data(self, data):
-        data = self.transformation.apply(data, is_train=True)
-        split_transform = self._create_instance_splitter("validation") + RemoveFields(
-            ["forecast_start", "start"]
+        split_transform = self._create_instance_splitter(
+            "validation",
+            past_length=self.context_length + max(self.lags_seq),
+            prediction_length=self.prediction_length,
         )
-        data = split_transform.apply(data, is_train=False)
-        return data
 
-    def __iter__(self) -> Iterator:
-        preprocessed_datasets = [
-            Map(
-                partial(self.preprocess_entry, mode=self.mode),
-                dataset,
-            )
-            for dataset in self.datasets
-        ]
+        def split(entry, split_transform):
+            return next(iter(split_transform.apply([entry], is_train=True)))
 
-        if self.mode == "training":
-            iterables = [
-                self.create_training_data(dataset) for dataset in preprocessed_datasets
+        datasets = self.datasets.map(
+            split, fn_kwargs={"split_transform": split_transform}
+        )
+        time_features = time_features_from_frequency_str("s")
+        datasets = datasets.map(
+            self.add_features, fn_kwargs={"time_features": time_features}
+        )
+        return datasets.select_columns(
+            [
+                "past_target",
+                "future_target",
+                "past_time_feat",
+                "future_time_feat",
+                "past_observed_values",
+                "future_observed_values",
             ]
-        elif self.mode == "test":
-            iterables = [
-                self.create_test_data(dataset) for dataset in preprocessed_datasets
-            ]
-        else:
-            iterables = [
-                self.create_validation_data(dataset)
-                for dataset in preprocessed_datasets
-            ]
+        )
 
-        worker_info = get_worker_info()
-        if worker_info is None:
-            probs = list(self.probabilities)
-        else:
-            worker_id = worker_info.id
-            num_workers = worker_info.num_workers
-            iterables = list(itertools.islice(iterables, worker_id, None, num_workers))
-            probs = list(
-                itertools.islice(self.probabilities, worker_id, None, num_workers)
-            )
+    # def __iter__(self) -> Iterator:
+    #     if self.mode == "training":
+    #         yield next(self.datasets)
+    #     else:
+    #         for entry in itertools.chain(*self.datasets):
+    #             yield entry
 
-        probs = [prob / sum(probs) for prob in probs]
+    # worker_info = get_worker_info()
+    # if worker_info is None:
+    #     probs = list(self.probabilities)
+    # else:
+    #     worker_id = worker_info.id
+    #     num_workers = worker_info.num_workers
+    #     iterables = list(itertools.islice(iterables, worker_id, None, num_workers))
+    #     probs = list(
+    #         itertools.islice(self.probabilities, worker_id, None, num_workers)
+    #     )
 
-        iterators = list(map(iter, iterables))
-        if self.mode == "training":
-            while True:
-                idx = np.random.choice(range(len(iterators)), p=probs)
-                try:
-                    yield next(iterators[idx])
-                except StopIteration:
-                    probs[idx] = 0
-                    if sum(probs) == 0:
-                        return
-                    probs = [prob / sum(probs) for prob in probs]
-        else:
-            for entry in itertools.chain(*iterators):
-                yield entry
+    # probs = [prob / sum(probs) for prob in probs]
+
+    # iterators = list(map(iter, iterables))
+    # if self.mode == "training":
+    #     while True:
+    #         idx = np.random.choice(range(len(iterators)), p=probs)
+    #         try:
+    #             yield next(iterators[idx])
+    #         except StopIteration:
+    #             probs[idx] = 0
+    #             if sum(probs) == 0:
+    #                 return
+    #             probs = [prob / sum(probs) for prob in probs]
+    # else:
+    #     for entry in itertools.chain(*iterators):
+    #         yield entry
 
 
 def train_model(
@@ -546,15 +630,23 @@ def train_model(
         **{
             "accelerator": "auto",
             "callbacks": [checkpoint] + custom_callbacks,
+            "log_every_n_steps": 1,
+            "limit_val_batches": 0.01,
             **trainer_kwargs,
         }
     )
 
     training_data_loader = DataLoader(
-        training_data, batch_size=batch_size, pin_memory=True, num_workers=4
+        training_data,
+        batch_size=batch_size,
+        pin_memory=True,
+        num_workers=args.num_workers,
     )
     validation_data_loader = DataLoader(
-        validation_data, batch_size=batch_size, pin_memory=True, num_workers=4
+        validation_data,
+        batch_size=batch_size,
+        pin_memory=True,
+        num_workers=args.num_workers,
     )
 
     trainer.fit(
@@ -976,8 +1068,8 @@ def train(args):
         #     )
         train_data = ChronosDataset(
             path=args.dataset_path,
-            datasets=CHRONOS_TRAINING_DATASETS,
-            probabilities=None,
+            datasets=CHRONOS_TRAINING_DATASETS[:2],
+            probabilities=CHRONOS_TRAINING_DATASET_SIZE[:2],
             transformation=estimator.create_transformation(),
             lags_seq=estimator.lags_seq,
             context_length=args.context_length,
@@ -985,12 +1077,12 @@ def train(args):
             model_type="causal",
             imputation_method=LastValueImputation(),
             mode="training",
-        ).shuffle(shuffle_buffer_length=args.shuffle_buffer_length)
+        )
 
         val_data = ChronosDataset(
             path=args.dataset_path,
-            datasets=CHRONOS_TRAINING_DATASETS,
-            probabilities=None,
+            datasets=CHRONOS_TRAINING_DATASETS[:2],
+            probabilities=CHRONOS_TRAINING_DATASET_SIZE[:2],
             transformation=estimator.create_transformation(),
             lags_seq=estimator.lags_seq,
             context_length=args.context_length,
@@ -1359,10 +1451,10 @@ if __name__ == "__main__":
     )
 
     # Training arguments
-    parser.add_argument("-b", "--batch_size", type=int, default=256)
+    parser.add_argument("-b", "--batch_size", type=int, default=16)
     parser.add_argument("-m", "--max_epochs", type=int, default=10000)
     parser.add_argument("-n", "--num_batches_per_epoch", type=int, default=100)
-    parser.add_argument("--shuffle_buffer_length", type=int, default=100)
+    parser.add_argument("--shuffle_buffer_length", type=int, default=32)
     parser.add_argument("--limit_val_batches", type=int)
     parser.add_argument("--early_stopping_patience", default=50)
     parser.add_argument("--dropout", type=float, default=0.1)
@@ -1370,7 +1462,7 @@ if __name__ == "__main__":
     # Evaluation arguments
     parser.add_argument("--num_parallel_samples", type=int, default=100)
     parser.add_argument("--num_samples", type=int, default=100)
-    parser.add_argument("--num_workers", type=int, default=1)
+    parser.add_argument("--num_workers", type=int, default=8)
 
     # GPU ID
     parser.add_argument("--gpu", type=int, default=0)
