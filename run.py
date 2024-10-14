@@ -42,7 +42,7 @@ from data.data_utils import (
 )
 
 from data.dataset_list import ALL_DATASETS
-from utils.utils import plot_forecasts, set_seed
+from helpers.utils import plot_forecasts, set_seed
 from lag_llama.gluon.estimator import LagLlamaEstimator
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
