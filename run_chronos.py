@@ -218,7 +218,7 @@ def to_gluonts(entry):
     dataset_freq = offset_alias_to_period_alias.get(dataset_freq, dataset_freq)
 
     # If there's no "target" column, randomly select a float32 column
-    if "target" not in entry:
+    if "target" not in entry or entry["target"] is None:
         float32_columns = [
             col
             for col in entry.keys()
@@ -231,11 +231,11 @@ def to_gluonts(entry):
             raise ValueError("No suitable float32 column found for target")
     else:
         target = entry["target"]
-
     return {
-        "start": pd.Period(entry["timestamp"][0], freq=dataset_freq),
-        "target": target,
-        "item_id": entry["id"],
+        FieldName.START: pd.Period(entry["timestamp"][0], freq=dataset_freq),
+        FieldName.TARGET: np.asarray(target, dtype=np.float32),
+        FieldName.ITEM_ID: entry["id"],
+        "timestamp": np.asarray(entry["timestamp"]),
     }
 
 
@@ -287,6 +287,7 @@ class ChronosDataset:
         imputation_method: Optional[MissingValueImputation] = None,
         mode: str = "training",
         num_shards: int = 64,
+        num_proc: int = 4,
         np_dtype=np.float32,
     ) -> None:
         super().__init__()
@@ -294,20 +295,21 @@ class ChronosDataset:
         assert mode in ("training", "validation", "test")
         assert model_type in ("seq2seq", "causal")
 
-        datasets = [load_dataset(path, dataset, split="train") for dataset in datasets]
-        for dataset in datasets:
-            dataset.with_format("numpy")
+        datasets = [
+            load_dataset(path, dataset, split="train", num_proc=num_proc)
+            for dataset in datasets
+        ]
 
         if probabilities is None:
             # use the CHRONOS_TRAINING_DATASETS normalized by the sum
-            self.probabilities = [
+            probabilities = [
                 size / sum(CHRONOS_TRAINING_DATASET_SIZE)
                 for size in CHRONOS_TRAINING_DATASET_SIZE
             ]
 
         else:
             assert len(probabilities) == len(datasets)
-            self.probabilities = probabilities
+            probabilities = [prob / sum(probabilities) for prob in probabilities]
 
         datasets = interleave_datasets(datasets, probabilities=probabilities)
         datasets = datasets.to_iterable_dataset(num_shards=num_shards)
@@ -332,31 +334,6 @@ class ChronosDataset:
             else LastValueImputation()
         )
         self.np_dtype = np_dtype
-
-    def to_gluonts(entry):
-        dataset_freq = pd.infer_freq(entry["timestamp"])
-        dataset_freq = offset_alias_to_period_alias.get(dataset_freq, dataset_freq)
-
-        # If there's no "target" column, randomly select a float32 column
-        if "target" not in entry or entry["target"] is None:
-            float32_columns = [
-                col
-                for col in entry.keys()
-                if isinstance(entry[col], (list, np.ndarray)) and col != "timestamp"
-            ]
-            if float32_columns:
-                target_column = random.choice(float32_columns)
-                target = entry[target_column]
-            else:
-                raise ValueError("No suitable float32 column found for target")
-        else:
-            target = entry["target"]
-        return {
-            FieldName.START: pd.Period(entry["timestamp"][0], freq=dataset_freq),
-            FieldName.TARGET: np.asarray(target, dtype=np.float32),
-            FieldName.ITEM_ID: entry["id"],
-            "timestamp": np.asarray(entry["timestamp"]),
-        }
 
     def _create_instance_splitter(
         self,
@@ -392,8 +369,9 @@ class ChronosDataset:
             dummy_value=np.nan,
         )
 
+    @staticmethod
     def add_features(entry, time_features):
-        entry[f"past_{FieldName.TIME_FEAT}"] = (
+        entry[f"past_{FieldName.FEAT_TIME}"] = (
             np.vstack(
                 [
                     feat(pd.to_datetime(entry["past_timestamp"]))
@@ -404,7 +382,7 @@ class ChronosDataset:
             .T
         )
 
-        entry[f"future_{FieldName.TIME_FEAT}"] = (
+        entry[f"future_{FieldName.FEAT_TIME}"] = (
             np.vstack(
                 [
                     feat(pd.to_datetime(entry["future_timestamp"]))
@@ -424,18 +402,19 @@ class ChronosDataset:
 
         return entry
 
-    def create_training_data(self, data):
+    @staticmethod
+    def split(entry, split_transform, is_train=True):
+        return next(iter(split_transform.apply([entry], is_train=is_train)))
+
+    def create_training_data(self):
         split_transform = self._create_instance_splitter(
             "training",
             past_length=self.context_length + max(self.lags_seq),
             prediction_length=self.prediction_length,
         )
 
-        def split(entry, split_transform):
-            return next(iter(split_transform.apply([entry], is_train=True)))
-
         datasets = self.datasets.map(
-            split, fn_kwargs={"split_transform": split_transform}
+            self.split, fn_kwargs={"split_transform": split_transform, "is_train": True}
         )
         time_features = time_features_from_frequency_str("s")
         datasets = datasets.map(
@@ -452,18 +431,16 @@ class ChronosDataset:
             ]
         )
 
-    def create_test_data(self, data):
+    def create_test_data(self):
         split_transform = self._create_instance_splitter(
             "test",
             past_length=self.context_length + max(self.lags_seq),
             prediction_length=self.prediction_length,
         )
 
-        def split(entry, split_transform):
-            return next(iter(split_transform.apply([entry], is_train=False)))
-
         datasets = self.datasets.map(
-            split, fn_kwargs={"split_transform": split_transform}
+            self.split,
+            fn_kwargs={"split_transform": split_transform, "is_train": False},
         )
         time_features = time_features_from_frequency_str("s")
         datasets = datasets.map(
@@ -480,18 +457,15 @@ class ChronosDataset:
             ]
         )
 
-    def create_validation_data(self, data):
+    def create_validation_data(self):
         split_transform = self._create_instance_splitter(
             "validation",
             past_length=self.context_length + max(self.lags_seq),
             prediction_length=self.prediction_length,
         )
 
-        def split(entry, split_transform):
-            return next(iter(split_transform.apply([entry], is_train=True)))
-
         datasets = self.datasets.map(
-            split, fn_kwargs={"split_transform": split_transform}
+            self.split, fn_kwargs={"split_transform": split_transform, "is_train": True}
         )
         time_features = time_features_from_frequency_str("s")
         datasets = datasets.map(
@@ -536,12 +510,14 @@ def train_model(
         batch_size=batch_size,
         pin_memory=True,
         num_workers=args.num_workers,
+        persistent_workers=True,
     )
     validation_data_loader = DataLoader(
         validation_data,
         batch_size=batch_size,
         pin_memory=True,
         num_workers=args.num_workers,
+        persistent_workers=True,
     )
 
     trainer.fit(
@@ -972,20 +948,21 @@ def train(args):
             model_type="causal",
             imputation_method=LastValueImputation(),
             mode="training",
+            num_proc=args.num_workers,
         )
 
-        val_data = ChronosDataset(
-            path=args.dataset_path,
-            datasets=CHRONOS_TRAINING_DATASETS[:2],
-            probabilities=CHRONOS_TRAINING_DATASET_SIZE[:2],
-            transformation=estimator.create_transformation(),
-            lags_seq=estimator.lags_seq,
-            context_length=args.context_length,
-            prediction_length=args.prediction_length,
-            model_type="causal",
-            imputation_method=LastValueImputation(),
-            mode="validation",
-        )
+        # val_data = ChronosDataset(
+        #     path=args.dataset_path,
+        #     datasets=CHRONOS_TRAINING_DATASETS[:2],
+        #     probabilities=CHRONOS_TRAINING_DATASET_SIZE[:2],
+        #     transformation=estimator.create_transformation(),
+        #     lags_seq=estimator.lags_seq,
+        #     context_length=args.context_length,
+        #     prediction_length=args.prediction_length,
+        #     model_type="causal",
+        #     imputation_method=LastValueImputation(),
+        #     mode="validation",
+        # )
 
         # Batch size search since when we scale up, we might not be able to use the same batch size for all models
         # if args.search_batch_size:
@@ -1056,9 +1033,11 @@ def train(args):
         trained_model, trainer = train_model(
             training_network=estimator.create_lightning_module(),
             trainer_kwargs=estimator.trainer_kwargs,
-            training_data=train_data,
+            training_data=train_data.create_training_data().shuffle(
+                buffer_size=args.shuffle_buffer_length
+            ),
             batch_size=batch_size,
-            validation_data=val_data,
+            validation_data=train_data.create_validation_data(),
             ckpt_path=ckpt_path,
         )
 
@@ -1349,7 +1328,7 @@ if __name__ == "__main__":
     parser.add_argument("-b", "--batch_size", type=int, default=16)
     parser.add_argument("-m", "--max_epochs", type=int, default=10000)
     parser.add_argument("-n", "--num_batches_per_epoch", type=int, default=100)
-    parser.add_argument("--shuffle_buffer_length", type=int, default=32)
+    parser.add_argument("--shuffle_buffer_length", type=int, default=64)
     parser.add_argument("--limit_val_batches", type=int)
     parser.add_argument("--early_stopping_patience", default=50)
     parser.add_argument("--dropout", type=float, default=0.1)
@@ -1357,7 +1336,7 @@ if __name__ == "__main__":
     # Evaluation arguments
     parser.add_argument("--num_parallel_samples", type=int, default=100)
     parser.add_argument("--num_samples", type=int, default=100)
-    parser.add_argument("--num_workers", type=int, default=8)
+    parser.add_argument("--num_workers", type=int, default=16)
 
     # GPU ID
     parser.add_argument("--gpu", type=int, default=0)
