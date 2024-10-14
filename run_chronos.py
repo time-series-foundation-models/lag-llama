@@ -358,76 +358,6 @@ class ChronosDataset:
             "timestamp": np.asarray(entry["timestamp"]),
         }
 
-    # def __post_init__(self):
-    #     preprocessed_datasets = [
-    #         Map(
-    #             partial(self.preprocess_entry, mode=self.mode),
-    #             dataset,
-    #         )
-    #         for dataset in self.datasets
-    #     ]
-    #     if self.mode == "training":
-    #         iterables = [
-    #             IterableDataset.from_generator(self.create_training_data(dataset)) for dataset in preprocessed_datasets
-    #         ]
-    #     elif self.mode == "test":
-    #         iterables = [
-    #             IterableDataset.from_generator(self.create_test_data(dataset)) for dataset in preprocessed_datasets
-    #         ]
-    #     else:
-    #         iterables = [
-    #             IterableDataset.from_generator(self.create_validation_data(dataset))
-    #             for dataset in preprocessed_datasets
-    #         ]
-
-    #     self.datasets = interleave_datasets(iterables, probabilities=self.probabilities)
-
-    # def __len__(self):
-    #     return sum(prob for prob in self.probabilities)
-
-    # def preprocess_entry(self, entry: dict, mode: str) -> dict:
-    #     # entry = to_gluonts(entry)
-
-    #     if "target" not in entry:
-    #         float32_columns = [
-    #             col
-    #             for col in entry.keys()
-    #             if isinstance(entry[col], (list, np.ndarray)) and col != "timestamp"
-    #         ]
-    #         if float32_columns:
-    #             target_column = random.choice(float32_columns)
-    #             target = entry[target_column]
-    #         else:
-    #             raise ValueError("No suitable float32 column found for target")
-    #     else:
-    #         target = entry["target"]
-
-    #     dataset_freq = pd.infer_freq(entry["timestamp"])
-    #     entry["start"] = pd.Period(entry["timestamp"][0], freq=dataset_freq)
-    #     entry["item_id"] = entry["id"]
-    #     entry["timestamp"] = np.asarray(entry["timestamp"])
-
-    #     # entry = {f: entry[f] for f in ["start", "target"]}
-
-    #     entry["target"] = np.asarray(target, dtype=self.np_dtype)
-    #     assert entry["target"].ndim == 1, f"got {entry['target'].ndim=}, expected 1"
-
-    #     if self.model_type == "causal":
-    #         # Causal models do not play nice with missing values, so it is
-    #         # recommended to use an imputation method, e.g., LastValueImputation
-    #         entry["target"] = self.imputation_method(entry["target"])
-
-    #     if mode == "training" and self.drop_prob > 0:
-    #         target = entry["target"].copy()
-    #         drop_p = np.random.uniform(low=0.0, high=self.drop_prob)
-    #         mask = np.random.choice(
-    #             [True, False], size=len(target), p=[drop_p, 1 - drop_p]
-    #         )
-    #         target[mask] = np.nan
-    #         entry["target"] = target
-
-    #     return entry
-
     def _create_instance_splitter(
         self,
         mode: str = "training",
@@ -577,41 +507,6 @@ class ChronosDataset:
                 "future_observed_values",
             ]
         )
-
-    # def __iter__(self) -> Iterator:
-    #     if self.mode == "training":
-    #         yield next(self.datasets)
-    #     else:
-    #         for entry in itertools.chain(*self.datasets):
-    #             yield entry
-
-    # worker_info = get_worker_info()
-    # if worker_info is None:
-    #     probs = list(self.probabilities)
-    # else:
-    #     worker_id = worker_info.id
-    #     num_workers = worker_info.num_workers
-    #     iterables = list(itertools.islice(iterables, worker_id, None, num_workers))
-    #     probs = list(
-    #         itertools.islice(self.probabilities, worker_id, None, num_workers)
-    #     )
-
-    # probs = [prob / sum(probs) for prob in probs]
-
-    # iterators = list(map(iter, iterables))
-    # if self.mode == "training":
-    #     while True:
-    #         idx = np.random.choice(range(len(iterators)), p=probs)
-    #         try:
-    #             yield next(iterators[idx])
-    #         except StopIteration:
-    #             probs[idx] = 0
-    #             if sum(probs) == 0:
-    #                 return
-    #             probs = [prob / sum(probs) for prob in probs]
-    # else:
-    #     for entry in itertools.chain(*iterators):
-    #         yield entry
 
 
 def train_model(
