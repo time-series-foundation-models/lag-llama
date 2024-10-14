@@ -286,7 +286,7 @@ class ChronosDataset:
         model_type: str = "causal",
         imputation_method: Optional[MissingValueImputation] = None,
         mode: str = "training",
-        num_shards: int = 64,
+        num_shards: int = 32,
         num_proc: int = 4,
         np_dtype=np.float32,
     ) -> None:
@@ -311,7 +311,9 @@ class ChronosDataset:
             assert len(probabilities) == len(datasets)
             probabilities = [prob / sum(probabilities) for prob in probabilities]
 
-        datasets = interleave_datasets(datasets, probabilities=probabilities)
+        datasets = interleave_datasets(
+            datasets, probabilities=probabilities, stopping_strategy="all_exhausted"
+        )
         datasets = datasets.to_iterable_dataset(num_shards=num_shards)
         datasets = datasets.map(to_gluonts)
         self.datasets = datasets.select_columns(
@@ -371,24 +373,16 @@ class ChronosDataset:
 
     @staticmethod
     def add_features(entry, time_features):
-        entry[f"past_{FieldName.FEAT_TIME}"] = (
-            np.vstack(
-                [
-                    feat(pd.to_datetime(entry["past_timestamp"]))
-                    for feat in time_features
-                ]
-            )
+        past_timestamp = pd.to_datetime(entry["past_timestamp"])
+        entry[f"past_{FieldName.FEAT_TIME}"] = np.nan_to_num(
+            np.vstack([feat(past_timestamp) for feat in time_features])
             .astype(np.float32)
             .T
         )
 
-        entry[f"future_{FieldName.FEAT_TIME}"] = (
-            np.vstack(
-                [
-                    feat(pd.to_datetime(entry["future_timestamp"]))
-                    for feat in time_features
-                ]
-            )
+        future_timestamp = pd.to_datetime(entry["future_timestamp"])
+        entry[f"future_{FieldName.FEAT_TIME}"] = np.nan_to_num(
+            np.vstack([feat(future_timestamp) for feat in time_features])
             .astype(np.float32)
             .T
         )
@@ -510,14 +504,14 @@ def train_model(
         batch_size=batch_size,
         pin_memory=True,
         num_workers=args.num_workers,
-        persistent_workers=True,
+        persistent_workers=args.num_workers > 1,
     )
     validation_data_loader = DataLoader(
         validation_data,
         batch_size=batch_size,
         pin_memory=True,
         num_workers=args.num_workers,
-        persistent_workers=True,
+        persistent_workers=args.num_workers > 1,
     )
 
     trainer.fit(
@@ -1325,10 +1319,10 @@ if __name__ == "__main__":
     )
 
     # Training arguments
-    parser.add_argument("-b", "--batch_size", type=int, default=16)
+    parser.add_argument("-b", "--batch_size", type=int, default=32)
     parser.add_argument("-m", "--max_epochs", type=int, default=10000)
     parser.add_argument("-n", "--num_batches_per_epoch", type=int, default=100)
-    parser.add_argument("--shuffle_buffer_length", type=int, default=64)
+    parser.add_argument("--shuffle_buffer_length", type=int, default=128)
     parser.add_argument("--limit_val_batches", type=int)
     parser.add_argument("--early_stopping_patience", default=50)
     parser.add_argument("--dropout", type=float, default=0.1)
