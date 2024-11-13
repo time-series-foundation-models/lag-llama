@@ -581,7 +581,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_embd_per_head", type=int, default=64)
     parser.add_argument("--n_head", type=int, default=4)
     parser.add_argument("--dim_feedforward", type=int, default=256)
-    parser.add_argument("--lags_seq", type=str, nargs="+", default=["Q", "M", "W", "D", "H", "T", "S"])
+    parser.add_argument("--lags_seq", type=str, nargs="+", default=["QE", "ME", "W", "D", "h", "min", "s"])
 
     # Data normalization
     parser.add_argument(

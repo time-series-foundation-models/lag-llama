@@ -20,11 +20,10 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from gluon_utils.scalers.robust_scaler import RobustScaler
 from gluonts.torch.distributions import DistributionOutput
 from gluonts.torch.scaler import MeanScaler, NOPScaler, StdScaler
 from gluonts.torch.util import lagged_sequence_values, unsqueeze_expand
-
-from gluon_utils.scalers.robust_scaler import RobustScaler
 
 
 @dataclass
@@ -319,11 +318,15 @@ class CausalSelfAttention(nn.Module):
                 # When kv_cache is in use and we're working with only the last token (T = 1 instead of full sequence length `true_seq_len``)
                 # Use the full sequence length for positional embeddings (true_seq_len)
                 # q is the query vector for the last token, so it's position is the last index (-1)
-                cos, sin = self.rotary_emb(device=v.device, dtype=v.dtype, seq_len=true_seq_len)
+                cos, sin = self.rotary_emb(
+                    device=v.device, dtype=v.dtype, seq_len=true_seq_len
+                )
                 q, _ = apply_rotary_pos_emb(q, k, cos, sin, position_ids=[-1])
-                
+
                 # k is the key matrix after concatenation with cache, so no position_ids
-                cos, sin = self.rotary_emb(device=v.device, dtype=v.dtype, seq_len=true_seq_len)
+                cos, sin = self.rotary_emb(
+                    device=v.device, dtype=v.dtype, seq_len=true_seq_len
+                )
                 _, k = apply_rotary_pos_emb(q, k, cos, sin, position_ids=None)
             else:
                 cos, sin = self.rotary_emb(device=v.device, dtype=v.dtype, seq_len=T)
@@ -495,6 +498,7 @@ class LagLlamaModel(nn.Module):
 
         # In the below code, instead of max(self.lags_seq), it was previously -self.context_length
         if future_target is not None:
+            # Shape is (bsz, context_length+(pred_len-1))
             input = torch.cat(
                 (
                     scaled_past_target[..., max(self.lags_seq) :],  # Just the context
@@ -502,7 +506,7 @@ class LagLlamaModel(nn.Module):
                     / scale,  # Not sure about the -1 here. Maybe so since the last value isn't used in the model for prediction of any new values. also if the prediction length is 1, this doesn't really affect anything
                 ),
                 dim=-1,
-            )  # Shape is (bsz, context_length+(pred_len-1))
+            )
         else:
             input = scaled_past_target[..., max(self.lags_seq) :]
         if (past_time_feat is not None) and (future_time_feat is not None):
@@ -518,20 +522,18 @@ class LagLlamaModel(nn.Module):
                 else past_time_feat[..., max(self.lags_seq) :, :]
             )
 
-        prior_input = (
-            past_target[..., : max(self.lags_seq)] - loc
-        ) / scale  # This the history used to construct lags.  # bsz, max(self.lags_seq)
+        # This the history used to construct lags.  # bsz, max(self.lags_seq)
+        prior_input = (past_target[..., : max(self.lags_seq)] - loc) / scale
 
-        lags = lagged_sequence_values(
-            self.lags_seq, prior_input, input, dim=-1
-        )  # Lags are added as an extra dim. Shape is (bsz, context_length+(pred_len-1), len(self.lags_seq))
+        # Lags are added as an extra dim. Shape is (bsz, context_length+(pred_len-1), len(self.lags_seq))
+        lags = lagged_sequence_values(self.lags_seq, prior_input, input, dim=-1)
 
-        static_feat = torch.cat(
-            (loc.abs().log1p(), scale.log()), dim=-1
-        )  # (bsz, 2) (loc and scale are concatenated)
+        # (bsz, 2) (loc and scale are concatenated)
+        static_feat = torch.cat((loc.abs().log1p(), scale.log()), dim=-1)
+        # (bsz, context_length+(pred_len-1), 2)
         expanded_static_feat = unsqueeze_expand(
             static_feat, dim=-2, size=lags.shape[-2]
-        )  # (bsz, context_length+(pred_len-1), 2)
+        )
         # expanded_static_feat: (bsz, context_length+(pred_len-1), len(self.lags_seq) + 2); (bsz, 1); (bsz, 1)
 
         if past_time_feat is not None:
@@ -566,20 +568,18 @@ class LagLlamaModel(nn.Module):
             transformer_input = transformer_input[:, -1:]
 
         # forward the LLaMA model itself
-        x = self.transformer.wte(
-            transformer_input
-        )  # token embeddings of shape (b, t, n_embd_per_head*n_head) # (bsz, context_length+(pred_len-1), n_embd_per_head*n_head)
+        # token embeddings of shape (b, t, n_embd_per_head*n_head) # (bsz, context_length+(pred_len-1), n_embd_per_head*n_head)
+        x = self.transformer.wte(transformer_input)
 
         for block in self.transformer.h:
             x = block(x, use_kv_cache)
-        x = self.transformer.ln_f(
-            x
-        )  # (bsz, context_length+(pred_len-1), n_embd_per_head*n_head)
+        # (bsz, context_length+(pred_len-1), n_embd_per_head*n_head)
+        x = self.transformer.ln_f(x)
         if use_kv_cache:
             self.y_cache = True
-        params = self.param_proj(
-            x
-        )  # (bsz, context_length+(pred_len-1)) ; (bsz, context_length+(pred_len-1))
+
+        # (bsz, context_length+(pred_len-1)) ; (bsz, context_length+(pred_len-1))
+        params = self.param_proj(x)
         return params, loc, scale
 
     def reset_cache(self) -> None:
