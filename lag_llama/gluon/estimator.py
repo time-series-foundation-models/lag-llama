@@ -14,7 +14,7 @@
 
 from typing import Any, Dict, Iterable, Optional
 
-import pytorch_lightning as pl
+import lightning as L
 import torch
 
 from gluonts.core.component import validated
@@ -65,7 +65,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
 
     This class is uses the model defined in ``ConvTSMixerModel``,
     and wraps it into a ``ConvTSMixerLightningModule`` for training
-    purposes: training is performed using PyTorch Lightning's ``pl.Trainer``
+    purposes: training is performed using PyTorch Lightning's ``L.Trainer``
     class.
 
     Parameters
@@ -90,7 +90,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         Number of batches to be processed in each training epoch
             (default: 50).
     trainer_kwargs
-        Additional arguments to provide to ``pl.Trainer`` for construction.
+        Additional arguments to provide to ``L.Trainer`` for construction.
     train_sampler
         Controls the sampling of windows during training.
     validation_sampler
@@ -284,7 +284,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
                 ]
             )
 
-    def create_lightning_module(self, use_kv_cache: bool = False) -> pl.LightningModule:
+    def create_lightning_module(self, use_kv_cache: bool = False) -> L.LightningModule:
         model_kwargs = {
             "input_size": self.input_size,
             "context_length": self.context_length,
