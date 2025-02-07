@@ -18,6 +18,7 @@ import warnings
 import json
 import os
 from pathlib import Path
+
 warnings.simplefilter(action="ignore", category=FutureWarning)
 warnings.simplefilter(action="ignore", category=UserWarning)
 from pathlib import Path
@@ -30,14 +31,20 @@ from gluonts.dataset.repository.datasets import get_dataset
 from gluonts.transform import InstanceSampler
 from pandas.tseries.frequencies import to_offset
 
-from data.read_new_dataset import get_ett_dataset, create_train_dataset_without_last_k_timesteps, TrainDatasets, MetaData
+from data.read_new_dataset import (
+    get_ett_dataset,
+    create_train_dataset_without_last_k_timesteps,
+    TrainDatasets,
+    MetaData,
+)
+
 
 class CombinedDatasetIterator:
     def __init__(self, datasets, seed, weights):
         self._datasets = [iter(el) for el in datasets]
         self._weights = weights
         self._rng = random.Random(seed)
-        
+
     def __next__(self):
         (dataset,) = self._rng.choices(self._datasets, weights=self._weights, k=1)
         return next(dataset)
@@ -105,15 +112,13 @@ def _count_timesteps(
                 f"Too large difference between both timestamps ({left} and {right}) for _count_timesteps()."
             )
 
+
 from pathlib import Path
 from gluonts.dataset.common import ListDataset
 from gluonts.dataset.repository.datasets import get_dataset
 
-def create_train_dataset_last_k_percentage(
-    raw_train_dataset,
-    freq,
-    k=100
-):
+
+def create_train_dataset_last_k_percentage(raw_train_dataset, freq, k=100):
     # Get training data
     train_data = []
     for i, series in enumerate(raw_train_dataset):
@@ -127,6 +132,7 @@ def create_train_dataset_last_k_percentage(
 
     return train_data
 
+
 def create_train_and_val_datasets_with_dates(
     name,
     dataset_path,
@@ -137,7 +143,7 @@ def create_train_and_val_datasets_with_dates(
     val_start_date=None,
     train_start_date=None,
     freq=None,
-    last_k_percentage=None
+    last_k_percentage=None,
 ):
     """
     Train Start date is assumed to be the start of the series if not provided
@@ -148,12 +154,19 @@ def create_train_and_val_datasets_with_dates(
     if name in ("ett_h1", "ett_h2", "ett_m1", "ett_m2"):
         path = os.path.join(dataset_path, "ett_datasets")
         raw_dataset = get_ett_dataset(name, path)
-    elif name in ("cpu_limit_minute", "cpu_usage_minute", \
-                        "function_delay_minute", "instances_minute", \
-                        "memory_limit_minute", "memory_usage_minute", \
-                        "platform_delay_minute", "requests_minute"):
+    elif name in (
+        "cpu_limit_minute",
+        "cpu_usage_minute",
+        "function_delay_minute",
+        "instances_minute",
+        "memory_limit_minute",
+        "memory_usage_minute",
+        "platform_delay_minute",
+        "requests_minute",
+    ):
         path = os.path.join(dataset_path, "huawei/" + name + ".json")
-        with open(path, "r") as f: data = json.load(f)
+        with open(path, "r") as f:
+            data = json.load(f)
         metadata = MetaData(**data["metadata"])
         train_data = [x for x in data["train"] if type(x["target"][0]) != str]
         test_data = [x for x in data["test"] if type(x["target"][0]) != str]
@@ -167,8 +180,12 @@ def create_train_and_val_datasets_with_dates(
         metadata = MetaData(**data["metadata"])
         train_test_data = [x for x in data["data"] if type(x["target"][0]) != str]
         full_dataset = ListDataset(train_test_data, freq=metadata.freq)
-        train_ds = create_train_dataset_without_last_k_timesteps(full_dataset, freq=metadata.freq, k=24)
-        raw_dataset = TrainDatasets(metadata=metadata, train=train_ds, test=full_dataset)
+        train_ds = create_train_dataset_without_last_k_timesteps(
+            full_dataset, freq=metadata.freq, k=24
+        )
+        raw_dataset = TrainDatasets(
+            metadata=metadata, train=train_ds, test=full_dataset
+        )
     else:
         raw_dataset = get_dataset(name, path=Path(dataset_path))
 
@@ -257,9 +274,7 @@ def create_train_and_val_datasets_with_dates(
     )
 
 
-def create_test_dataset(
-    name, dataset_path, history_length, freq=None, data_id=None
-):
+def create_test_dataset(name, dataset_path, history_length, freq=None, data_id=None):
     """
     For now, only window per series is used.
     make_evaluation_predictions automatically only predicts for the last "prediction_length" timesteps
@@ -270,12 +285,19 @@ def create_test_dataset(
     if name in ("ett_h1", "ett_h2", "ett_m1", "ett_m2"):
         path = os.path.join(dataset_path, "ett_datasets")
         dataset = get_ett_dataset(name, path)
-    elif name in ("cpu_limit_minute", "cpu_usage_minute", \
-                        "function_delay_minute", "instances_minute", \
-                        "memory_limit_minute", "memory_usage_minute", \
-                        "platform_delay_minute", "requests_minute"):
+    elif name in (
+        "cpu_limit_minute",
+        "cpu_usage_minute",
+        "function_delay_minute",
+        "instances_minute",
+        "memory_limit_minute",
+        "memory_usage_minute",
+        "platform_delay_minute",
+        "requests_minute",
+    ):
         path = os.path.join(dataset_path, "huawei/" + name + ".json")
-        with open(path, "r") as f: data = json.load(f)
+        with open(path, "r") as f:
+            data = json.load(f)
         metadata = MetaData(**data["metadata"])
         train_data = [x for x in data["train"] if type(x["target"][0]) != str]
         test_data = [x for x in data["test"] if type(x["target"][0]) != str]
@@ -289,7 +311,9 @@ def create_test_dataset(
         metadata = MetaData(**data["metadata"])
         train_test_data = [x for x in data["data"] if type(x["target"][0]) != str]
         full_dataset = ListDataset(train_test_data, freq=metadata.freq)
-        train_ds = create_train_dataset_without_last_k_timesteps(full_dataset, freq=metadata.freq, k=24)
+        train_ds = create_train_dataset_without_last_k_timesteps(
+            full_dataset, freq=metadata.freq, k=24
+        )
         dataset = TrainDatasets(metadata=metadata, train=train_ds, test=full_dataset)
     else:
         dataset = get_dataset(name, path=Path(dataset_path))

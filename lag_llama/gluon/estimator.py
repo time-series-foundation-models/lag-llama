@@ -14,7 +14,7 @@
 
 from typing import Any, Dict, Iterable, Optional
 
-import pytorch_lightning as pl
+import lightning as L
 import torch
 
 from gluonts.core.component import validated
@@ -27,10 +27,13 @@ from gluonts.time_feature import (
     get_lags_for_frequency,
     time_features_from_frequency_str,
 )
-from gluonts.torch.distributions import StudentTOutput, NegativeBinomialOutput
+from gluonts.torch.distributions import (
+    NegativeBinomialOutput,
+    StudentTOutput,
+    ImplicitQuantileNetworkOutput,
+)
 from gluonts.torch.model.estimator import PyTorchLightningEstimator
 from gluonts.torch.model.predictor import PyTorchPredictor
-from gluonts.torch.modules.loss import DistributionLoss, NegativeLogLikelihood
 from gluonts.transform import (
     AddObservedValuesIndicator,
     AddTimeFeatures,
@@ -44,9 +47,6 @@ from gluonts.transform import (
     ValidationSplitSampler,
 )
 
-from gluon_utils.gluon_ts_distributions.implicit_quantile_network import (
-    ImplicitQuantileNetworkOutput,
-)
 from lag_llama.gluon.lightning_module import LagLlamaLightningModule
 
 PREDICTION_INPUT_NAMES = [
@@ -65,7 +65,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
 
     This class is uses the model defined in ``ConvTSMixerModel``,
     and wraps it into a ``ConvTSMixerLightningModule`` for training
-    purposes: training is performed using PyTorch Lightning's ``pl.Trainer``
+    purposes: training is performed using PyTorch Lightning's ``L.Trainer``
     class.
 
     Parameters
@@ -82,9 +82,6 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
     distr_output
         Distribution to use to evaluate observations and sample predictions
         (default: StudentTOutput()).
-    loss
-        Loss to be optimized during training
-        (default: ``NegativeLogLikelihood()``).
     batch_norm
         Whether to apply batch normalization.
     batch_size
@@ -93,7 +90,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         Number of batches to be processed in each training epoch
             (default: 50).
     trainer_kwargs
-        Additional arguments to provide to ``pl.Trainer`` for construction.
+        Additional arguments to provide to ``L.Trainer`` for construction.
     train_sampler
         Controls the sampling of windows during training.
     validation_sampler
@@ -143,7 +140,6 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         window_warp_scales: list = [0.5, 2.0],
         # Continuning model arguments
         distr_output: str = "studentT",
-        loss: DistributionLoss = NegativeLogLikelihood(),
         num_parallel_samples: int = 100,
         batch_size: int = 32,
         num_batches_per_epoch: int = 50,
@@ -152,7 +148,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         validation_sampler: Optional[InstanceSampler] = None,
         time_feat: bool = False,
         dropout: float = 0.0,
-        lags_seq: list = ["Q", "M", "W", "D", "H", "T", "S"],
+        lags_seq: list = ["QE", "ME", "W", "D", "h", "min", "s"],
         data_id_to_name_map: dict = {},
         use_cosine_annealing_lr: bool = False,
         cosine_annealing_lr_args: dict = {},
@@ -160,7 +156,9 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
         ckpt_path: Optional[str] = None,
         nonnegative_pred_samples: bool = False,
         use_single_pass_sampling: bool = False,
-        device: torch.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        device: torch.device = torch.device("cuda")
+        if torch.cuda.is_available()
+        else torch.device("cpu"),
     ) -> None:
         default_trainer_kwargs = {"max_epochs": 100}
         if trainer_kwargs is not None:
@@ -200,7 +198,6 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
             distr_output = ImplicitQuantileNetworkOutput()
         self.distr_output = distr_output
         self.num_parallel_samples = num_parallel_samples
-        self.loss = loss
         self.batch_size = batch_size
         self.num_batches_per_epoch = num_batches_per_epoch
         self.nonnegative_pred_samples = nonnegative_pred_samples
@@ -266,7 +263,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
                         start_field=FieldName.START,
                         target_field=FieldName.TARGET,
                         output_field=FieldName.FEAT_TIME,
-                        time_features=time_features_from_frequency_str("S"),
+                        time_features=time_features_from_frequency_str("s"),
                         pred_length=self.prediction_length,
                     ),
                     AddObservedValuesIndicator(
@@ -287,7 +284,7 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
                 ]
             )
 
-    def create_lightning_module(self, use_kv_cache: bool = False) -> pl.LightningModule:
+    def create_lightning_module(self, use_kv_cache: bool = False) -> L.LightningModule:
         model_kwargs = {
             "input_size": self.input_size,
             "context_length": self.context_length,
@@ -308,7 +305,6 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
                 checkpoint_path=self.ckpt_path,
                 map_location=self.device,
                 strict=False,
-                loss=self.loss,
                 lr=self.lr,
                 weight_decay=self.weight_decay,
                 context_length=self.context_length,
@@ -346,7 +342,6 @@ class LagLlamaEstimator(PyTorchLightningEstimator):
             )
         else:
             return LagLlamaLightningModule(
-                loss=self.loss,
                 lr=self.lr,
                 weight_decay=self.weight_decay,
                 context_length=self.context_length,

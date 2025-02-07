@@ -1,4 +1,4 @@
-gluonts[torch]<=0.14.4
+gluonts[torch]
 numpy>=1.23.5
 torch>=2.0.0
 wandb
